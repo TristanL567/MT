@@ -108,45 +108,61 @@ This report demonstrates the integration of R code and its output within a LaTeX
 
 \section{Introduction}
 
-The theoretical foundation of modern portfolio management relies on the diversification of idiosyncratic risk. However, empirical evidence suggests that the distribution of individual stock returns is not normally distributed but is instead characterized by extreme skewness and "fat tails". \\
+% The theoretical foundation of modern portfolio management relies on the diversification of idiosyncratic risk. Empirical evidence suggests that the distribution of individual stock returns is not normally distributed, but is instead characterized by extreme skewness and "fat tails". \\
 
-Research by J.P. Morgan Asset Management highlights a phenomenon referred to as "The Agony and the Ecstasy"     \citep{Cembalest2014, Cembalest2024} revealing that equity indices, like the Russell 3000, are overwhelmingly influenced by extreme stock performances. While a small percentage of winners contribute the vast majority of excess returns, approximately 40\% of all constituents suffer a "catastrophic decline," which is defined as a drawdown of 70\% or more from their peak without a subsequent recovery. \\
+Research by J.P. Morgan Asset Management highlights an empirical phenomenon referred to as "The Agony and the Ecstasy" \citep{Cembalest2014, Cembalest2024} revealing that equity indices, like the Russell 3000, are overwhelmingly influenced by extreme stock performances. While a small percentage of winners contribute the vast majority of excess returns, approximately 40\% of all constituents suffer a "catastrophic decline," which is defined as a drawdown of 70\% or more from their peak without a subsequent recovery. \\
 
-Recent literature formalizes this phenomenon as a \textbf{"Catastrophic Stock Implosion"} (CSI) \citep{Tewari2024}. Unlike standard volatility, an implosion represents a distinct market event characterized by a severe price downturn followed by prolonged stagnation and minimal probability of recovery. This presents a critical challenge for index construction: passive investing captures the "Ecstasy" of winners but systematically forces investors to hold the "Agony" of these imploding assets. Crucially, as explored by \citep{Cembalest2014, Cembalest2024}, these declines are not limited to speculative "junk" companies; a significant portion of losers display "healthy" fundamentals prior to collapse, suggesting traditional metrics fail to capture the non-linear dynamics preceding permanent capital decline.
+Recent literature formalizes this phenomenon as a \textbf{"Catastrophic Stock Implosion"} (CSI) \citep{Tewari2024}. Unlike standard volatility, an implosion represents a distinct market event characterized by a severe price downturn followed by prolonged stagnation and minimal probability of recovery. This presents a critical challenge for index construction: passive investing captures the "Ecstasy" of winners but systematically forces investors to hold the "Agony" of these imploding assets (atleast until removal from the constituent index). Crucially, as explored by \citep{Cembalest2014, Cembalest2024}, these declines are not limited to speculative "junk" companies; a significant portion of losers display "healthy" fundamentals prior to collapse, suggesting traditional metrics fail to capture the dynamics preceding permanent capital decline.
 
 \section{Status Quo}
 
-Traditional risk management frameworks typically rely on linear risk metrics, such as realized volatility or market Beta, to filter investment universes. The prevailing assumption is that "Low Volatility" equates to safety. However, this approach is insufficient for avoiding catastrophic risk for three primary reasons:
+Despite the extensive literature on corporate insolvency dating back to seminal works on discriminant analysis, the effective modeling of bankruptcy—and specifically the pre-emptive identification of catastrophic stock drawdowns—remains an elusive goal. This persistence of risk stems not from a lack of data, but from the structural limitations of the methods currently in use. The prevailing paradigm relies heavily on static accounting indicators and linear assumptions, which often fail to capture the dynamic, noisy, and non-normal reality of modern equity markets. Consequently, the task of filtering out "implosion" candidates is inherently difficult due to the following fundamental frictions:
 
 \begin{enumerate}
-    \item \textbf{The Quality Trap:} Perceived fundamental health is not a shield against catastrophe. As noted in the J.P. Morgan analysis, over half of catastrophic decliners were profitable at their peak \citep{Cembalest2014, Cembalest2024}. Incorporate profitability. For example, standard metrics, such as Book-to-Price (B/P) can be misleading, resulting in a "Value-Trap" \citep{Penman2018}.
-    
-  \item \textbf{Linearity:} Additionally, standard linear filters fail to flag these "healthy" stocks before they break. Furthermore, traditional bankruptcy models, such as the Altman Z-Score, heavily rely on linear combinations of ratios which may be outdated or insufficient for capturing modern market dynamics or are implemented via generalized linear models (logistic-regressions), which are shown to have lower predictive power than more advanced algorithms such as CatBoost or XGBoost. \\
-    
-    \item \textbf{The "Zombie State" Gap:} Bankruptcy prediction models can be potentially valuable, but are prone to produce too many false positives or lag the market reaction. Many stocks enter a "zombie state" where, after an implosion, they linger in the market with depressed valuations without legally declaring bankruptcy. Investors are thus left holding illiquid assets that traditional distress models fail to flag until the capital is already lost. In addition, traditional models focus on negative skewness. It can be useful for short-term investing, but is usually to sensitive for long-term holdings as they flag stocks that suffer from temporary distresses, but which recover quickly. Thus, it would produce too many false-positives on the long-run.
+    \item \textbf{The Quality Trap:}  Recent literature has explored indicators, which are perceived to be synonymous with healthy stock fundamentals. \citet{Penman2018} suggest that the Book-to-Price ratio (B/P) is misleading. Low B/P values reflect uncertainty about future cash-flows rather than
+"cheap" buying opportunities. Additionally, \citet{Altman2016} argue that, amongst others, profitability is time-varying and find low predictive ability for longer time-periods. Specifically, while they find that profitability ratios like Return on Assets (ROA) provide efficient accuracy for a short horizon of two years , these measures fail to be consistent predictors over a ten-year horizon. They observe that in multivariate models, profitability is rendered largely insignificant when tested against solvency measures, such as the Equity Ratio, which dominates the prediction of distress irrespective of the horizon length.
+
+  \item \textbf{Predictive Limitations of Linearity:} Traditional bankruptcy models heavily rely on linear combinations of ratios, which may be insufficient for capturing modern market dynamics. \cite{Jones2017} categorize techniques like Linear Discriminant Analysis (LDA) and standard logit/probit models as rigid structures that struggle with the "noisy" datasets typical in finance. In a comparative evaluation of 16 classifiers, \cite{Jones2017} find that these linear baselines are sharply outperformed by statistical learning techniques, particularly AdaBoost, Generalized Boosting, and Random Forests. While linear models deteriorate when facing multicollinearity or non-normal data distributions, these ensemble methods demonstrate superior accuracy on both cross-sectional and longitudinal test samples without requiring variable transformation. \\
+  
+\item \textbf{Misalignment of Prediction Horizons and Objectives:} 
+While traditional bankruptcy models aim to minimize credit risk, they often fail to minimize market risk. A fundamental disconnect exists between \textit{legal insolvency} and \textit{market implosion}.
+
+\begin{itemize}
+    \item \textbf{Lagging Indicators:} Legal bankruptcy is frequently the final stage of a long deterioration process. By the time a traditional Altman Z-Score or structural model flags a company as distressed, the market has often already priced in the failure, resulting in a "Zombie state" where the asset lingers at depressed valuations \citep{Tewari2024}. For an equity investor, the capital is lost at the \textit{implosion} event, not the bankruptcy filing.
+    \item \textbf{The Cost of False Positives (Type I Errors):} In the context of equity indexing, the cost of a False Positive is not merely administrative; it is an opportunity cost. As noted in the "Agony and Ecstasy" framework, index returns are driven by a small tail of extreme winners. Traditional models, which penalize negative skewness too aggressively, risk flagging volatile but successful growth stocks as "distressed." Excluding a future "Ecstasy" stock due to a conservative model would severely underperform the benchmark, negating the benefits of avoiding the "Agony" stocks.
+\end{itemize}
+
 \end{enumerate}
 
-\subsection{What is unknown?}
+\section{Research Gap and Proposed Methodology}
 
-While the literature on bankruptcy prediction is extensive, there is a lack of research applying modern Machine Learning (ML) techniques to the specific problem of \textit{market-based} catastrophic declines in the cross-section of prior "healthy" index constituents. 
+\subsection{Implications of Current Limitations}
 
-Recent work has demonstrated that ML models, such as Gradient Boosting and Neural Networks, outperform traditional statistical models in predicting financial distress by capturing non-linear relationships between variables \citep{Jabeur2021, Jabeur2023}, \citep{Tewari2024}. For instance, models like CatBoost and XGBoost have shown superior classification accuracy in failure prediction compared to discriminant analysis and logistic regression. 
+While the literature on bankruptcy prediction is extensive, there is a lack of research applying modern Machine Learning (ML) techniques to the specific problem of \textit{market-based} catastrophic declines in the cross-section of prior "healthy" index constituents with a focus on enhanced index construction. \\
 
-These results by \citet{Tewari2024} could be built upon by further incorporating 
-LSTM for time-series forecasting. In addition, it remains unknown whether their insights can be
-useful as a viable risk-mitigation strategy. For example, one could create a "Crash-Filtered" index constructed by systematically excluding these identified "implosion" candidates and explore whether improvements in risk-adjusted
-returns can be delivered compared to traditional risk-mitigation techniques.
+Recent work has demonstrated that ML models, such as Gradient Boosting and Neural Networks, outperform traditional statistical models in predicting financial distress by capturing non-linear relationships between variables \citep{Jabeur2021, Jabeur2023}, \citep{Tewari2024}. For instance, ensemble models like CatBoost and XGBoost have shown superior classification accuracy in corporate failure prediction compared to discriminant analysis and logistic regression. \\
 
-\subsection{What could be improved?}
+\begin{enumerate}
+    \item \textbf{From Ratios to Raw Data:} By utilizing raw financial data rather than derivative ratios, Machine Learning (ML) algorithms can autonomously learn complex, non-linear dependencies and interaction effects that traditional ratios (like Book-to-Price) fail to capture.
+    \item \textbf{From Static to Dynamic:} Financial distress is rarely a static state but a sequence of deteriorating signals. Traditional cross-sectional models ignore the temporal trajectory of firm fundamentals.
+\end{enumerate}
 
-The current paradigm of index construction includes all constituents unless they fail listing requirements or suffer massive market cap erosion (a reactive approach). By shifting to a \textit{predictive exclusion} framework using Machine Learning, there is potential to mitigate the "Agony" side of the return distribution. This involves moving beyond "pure volatility forecasting" to "probabilistic implosion modeling," potentially leveraging a set of raw-data features without 
-computing any ratios (these dependencies can be picked up efficiently via the employed algorithms).
+\subsection{Proposed Approach: The "Crash-Filtered" Index}
+This thesis proposes bridging the gap between distress prediction and active index construction. While \citet{Tewari2024} established the concept of Catastrophic Stock Implosion, it remains unknown whether these insights can be operationalized into a viable risk-mitigation strategy.
+
+To address the "Agony and Ecstasy" dilemma, this research aims to move from "pure volatility forecasting" to "probabilistic implosion modeling." The proposed methodology improves upon the status quo in three specific ways:
+
+\begin{enumerate}
+    \item \textbf{Advanced Ensemble Modeling:} Utilizing Bagging and Boosting algorithms (e.g., XGBoost, CatBoost) to handle the non-linear feature interactions of raw market and fundamental data.
+    \item \textbf{Temporal Dynamics with Deep Learning:} Extending the work of \cite{Jabeur2023} by incorporating Long Short-Term Memory (LSTM) networks. This allows the model to treat company health as a time-series problem, detecting the \textit{rate of change} in fundamentals that precedes a crash, potentially reducing the "lag" associated with traditional models.
+    \item \textbf{Predictive Exclusion Framework:} Constructing a "Crash-Filtered" index using Rolling-Forward Cross-Validation. Instead of the traditional binary exclusion (listing failure), this framework applies a probabilistic threshold. The goal is to systematically exclude identified "implosion" candidates while retaining the "Ecstasy" winners, thereby isolating the Alpha generated purely by risk mitigation.
+\end{enumerate}
 
 %==== Chapter 2: Research Question ============================================%
 
-\chapter{Research Questio}
+\chapter{Research Question}
 
-Based on the identified problem—that standard metrics fail to distinguish between "recoverable volatility" and "permanent implosion" and that perceived quality-signals can be misleading, the following research question could be explored:
+Based on the identified problem that standard metrics fail to distinguish between "recoverable volatility" and "permanent implosion" and that perceived quality-signals can be misleading, the following research question could be explored:
 
 \section{Main Research Question}
 

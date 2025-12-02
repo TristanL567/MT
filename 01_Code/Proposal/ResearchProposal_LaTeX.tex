@@ -116,20 +116,22 @@ Recent literature formalizes this phenomenon as a \textbf{"Catastrophic Stock Im
 
 \section{Status Quo}
 
-Despite the extensive literature on corporate insolvency dating back to seminal works on discriminant analysis, the effective modeling of bankruptcy—and specifically the pre-emptive identification of catastrophic stock drawdowns—remains an elusive goal. This persistence of risk stems not from a lack of data, but from the structural limitations of the methods currently in use. The prevailing paradigm relies heavily on static accounting indicators and linear assumptions, which often fail to capture the dynamic, noisy, and non-normal reality of modern equity markets. Consequently, the task of filtering out "implosion" candidates is inherently difficult due to the following fundamental frictions:
-
 \begin{enumerate}
     \item \textbf{The Quality Trap:}  Recent literature has explored indicators, which are perceived to be synonymous with healthy stock fundamentals. \citet{Penman2018} suggest that the Book-to-Price ratio (B/P) is misleading. Low B/P values reflect uncertainty about future cash-flows rather than
 "cheap" buying opportunities. Additionally, \citet{Altman2016} argue that, amongst others, profitability is time-varying and find low predictive ability for longer time-periods. Specifically, while they find that profitability ratios like Return on Assets (ROA) provide efficient accuracy for a short horizon of two years , these measures fail to be consistent predictors over a ten-year horizon. They observe that in multivariate models, profitability is rendered largely insignificant when tested against solvency measures, such as the Equity Ratio, which dominates the prediction of distress irrespective of the horizon length.
 
-  \item \textbf{Predictive Limitations of Linearity:} Traditional bankruptcy models heavily rely on linear combinations of ratios, which may be insufficient for capturing modern market dynamics. \cite{Jones2017} categorize techniques like Linear Discriminant Analysis (LDA) and standard logit/probit models as rigid structures that struggle with the "noisy" datasets typical in finance. In a comparative evaluation of 16 classifiers, \cite{Jones2017} find that these linear baselines are sharply outperformed by statistical learning techniques, particularly AdaBoost, Generalized Boosting, and Random Forests. While linear models deteriorate when facing multicollinearity or non-normal data distributions, these ensemble methods demonstrate superior accuracy on both cross-sectional and longitudinal test samples without requiring variable transformation. \\
+  \item \textbf{Predictive Ability:} Traditional bankruptcy models heavily relied on linear combinations of ratios, like the Z-score introduced by \citep{Altman1968}. Since then, a variety of
+risk-management models have been introduced, culminating in modern ML applications, such as
+Random Forest (RF) or support vector machines \citep{Barboza2017}. Even though logit/probit models
+work reasonable well, \citet{Jones2017} also recommends the use of more advanced machine-learning
+methods, like AdaBoost or RF. \\
   
 \item \textbf{Misalignment of Prediction Horizons and Objectives:} 
 While traditional bankruptcy models aim to minimize credit risk, they often fail to minimize market risk. A fundamental disconnect exists between \textit{legal insolvency} and \textit{market implosion}.
 
 \begin{itemize}
     \item \textbf{Lagging Indicators:} Legal bankruptcy is frequently the final stage of a long deterioration process. By the time a traditional Altman Z-Score or structural model flags a company as distressed, the market has often already priced in the failure, resulting in a "Zombie state" where the asset lingers at depressed valuations \citep{Tewari2024}. For an equity investor, the capital is lost at the \textit{implosion} event, not the bankruptcy filing.
-    \item \textbf{The Cost of False Positives (Type I Errors):} In the context of equity indexing, the cost of a False Positive is not merely administrative; it is an opportunity cost. As noted in the "Agony and Ecstasy" framework, index returns are driven by a small tail of extreme winners. Traditional models, which penalize negative skewness too aggressively, risk flagging volatile but successful growth stocks as "distressed." Excluding a future "Ecstasy" stock due to a conservative model would severely underperform the benchmark, negating the benefits of avoiding the "Agony" stocks.
+    \item \textbf{The Cost of False Positives (Type I Errors):} In the context of equity indexing, the cost of a False Positive is mainly the opportunity cost. As noted in the "Agony and Ecstasy" framework, index returns are driven by a small tail of extreme winners. Traditional models, which penalize negative skewness too aggressively, risk flagging volatile but successful growth stocks as "distressed." Excluding a future "Ecstasy" stock (like NVIDIA) due to a conservative model, which produces too many False Positives, would severely underperform the benchmark, negating the benefits of avoiding the "Agony" stocks.
 \end{itemize}
 
 \end{enumerate}
@@ -137,15 +139,21 @@ While traditional bankruptcy models aim to minimize credit risk, they often fail
 \section{Research Gap and Proposed Methodology}
 
 \subsection{Implications of Current Limitations}
+ 
+\citet{Jabeur2021, Jabeur2023} have demonstrated that ML models, such as Gradient Boosting and Neural Networks,
+outperform statistical models in predicting financial distress by capturing non-linear relationships between variables. \citet{Tewari2024} have built on these insights and applied modern ML-techniques to market-based risk-modelling, for which they find that XGBoost can predict up to 61\% of implosions in the test set
+with a false positive rate of less than 3\%. \\
 
-While the literature on bankruptcy prediction is extensive, there is a lack of research applying modern Machine Learning (ML) techniques to the specific problem of \textit{market-based} catastrophic declines in the cross-section of prior "healthy" index constituents with a focus on enhanced index construction. \\
+While the literature has identified a variety of ML-methods for credit-risk modelling, 
+there is a lack of research for applying modern ML techniquers to the specific problem of 
+ \textit{market-based} catastrophic stock declines. Ensemble methods, like bagging and boosting,
+ or Neural Networks are well suited to not only improve predictive accuracy, but also to 
+ capture the time-series dynamics of individual stock risk. \\
 
-Recent work has demonstrated that ML models, such as Gradient Boosting and Neural Networks, outperform traditional statistical models in predicting financial distress by capturing non-linear relationships between variables \citep{Jabeur2021, Jabeur2023}, \citep{Tewari2024}. For instance, ensemble models like CatBoost and XGBoost have shown superior classification accuracy in corporate failure prediction compared to discriminant analysis and logistic regression. \\
-
-\begin{enumerate}
-    \item \textbf{From Ratios to Raw Data:} By utilizing raw financial data rather than derivative ratios, Machine Learning (ML) algorithms can autonomously learn complex, non-linear dependencies and interaction effects that traditional ratios (like Book-to-Price) fail to capture.
-    \item \textbf{From Static to Dynamic:} Financial distress is rarely a static state but a sequence of deteriorating signals. Traditional cross-sectional models ignore the temporal trajectory of firm fundamentals.
-\end{enumerate}
+% \begin{enumerate}
+%     \item \textbf{From Ratios to Raw Data:} By utilizing raw financial data rather than derivative ratios, Machine Learning (ML) algorithms can autonomously learn complex, non-linear dependencies and interaction effects that traditional ratios (like Book-to-Price) fail to capture.
+%     \item \textbf{From Static to Dynamic:} Financial distress is rarely a static state but a sequence of deteriorating signals. Traditional cross-sectional models ignore the temporal trajectory of firm fundamentals.
+% \end{enumerate}
 
 \subsection{Proposed Approach: The "Crash-Filtered" Index}
 This thesis proposes bridging the gap between distress prediction and active index construction. While \citet{Tewari2024} established the concept of Catastrophic Stock Implosion, it remains unknown whether these insights can be operationalized into a viable risk-mitigation strategy.
@@ -153,9 +161,10 @@ This thesis proposes bridging the gap between distress prediction and active ind
 To address the "Agony and Ecstasy" dilemma, this research aims to move from "pure volatility forecasting" to "probabilistic implosion modeling." The proposed methodology improves upon the status quo in three specific ways:
 
 \begin{enumerate}
-    \item \textbf{Advanced Ensemble Modeling:} Utilizing Bagging and Boosting algorithms (e.g., XGBoost, CatBoost) to handle the non-linear feature interactions of raw market and fundamental data.
+    \item \textbf{Advanced Ensemble Modeling:} Utilizing Bagging and Boosting algorithms (e.g., XGBoost, CatBoost) as well as Neural Networks to handle the non-linear feature interactions of raw market and fundamental data.
     \item \textbf{Temporal Dynamics with Deep Learning:} Extending the work of \cite{Jabeur2023} by incorporating Long Short-Term Memory (LSTM) networks. This allows the model to treat company health as a time-series problem, detecting the \textit{rate of change} in fundamentals that precedes a crash, potentially reducing the "lag" associated with traditional models.
-    \item \textbf{Predictive Exclusion Framework:} Constructing a "Crash-Filtered" index using Rolling-Forward Cross-Validation. Instead of the traditional binary exclusion (listing failure), this framework applies a probabilistic threshold. The goal is to systematically exclude identified "implosion" candidates while retaining the "Ecstasy" winners, thereby isolating the Alpha generated purely by risk mitigation.
+    \item \textbf{Predictive Exclusion Framework:} Constructing a "Crash-Filtered" index using Rolling-Forward Cross-Validation. Instead of the traditional binary exclusion (listing failure), this framework applies a probabilistic threshold. The goal is to systematically exclude identified "implosion" candidates while retaining the "Ecstasy" winners, thereby isolating the alpha generated purely by risk mitigation.
+    \item \textbf{Performance Evaluation:} The performance of the strategy will be evaluated by comparing the risk-adjusted returns and risk-characteristics of the filtered index against the unfiltered market-weighted benchmark and traditional volatility-weighted portfolios.
 \end{enumerate}
 
 %==== Chapter 2: Research Question ============================================%

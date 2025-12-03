@@ -160,18 +160,18 @@
 
 Research by J.P. Morgan Asset Management highlights an empirical phenomenon referred to as "The Agony and the Ecstasy" \citep{Cembalest2014, Cembalest2024} revealing that equity indices, like the Russell 3000, are overwhelmingly influenced by extreme stock performances. While a small percentage of winners contribute the vast majority of excess returns, approximately 40\% of all constituents suffer a "catastrophic decline," which is defined as a drawdown of 70\% or more from their peak without a subsequent recovery. \\
 
-Recent literature formalizes this phenomenon as a \textbf{"Catastrophic Stock Implosion"} (CSI) \citep{Tewari2024}. Unlike standard volatility, an implosion represents a distinct market event characterized by a severe price downturn followed by prolonged stagnation and minimal probability of recovery. This presents a critical challenge for index construction: passive investing captures the "Ecstasy" of winners but systematically forces investors to hold the "Agony" of these imploding assets (atleast until removal from the constituent index). Crucially, as explored by \citet{Cembalest2014, Cembalest2024}, these declines are not limited to speculative "junk" companies; a significant portion of losers display "healthy" fundamentals prior to collapse, suggesting traditional metrics fail to capture the dynamics preceding permanent capital decline.
+Recent literature formalizes this phenomenon as a \textbf{"Catastrophic Stock Implosion"} (CSI) \citep{Tewari2024}. Unlike standard volatility, an implosion represents a distinct market event characterized by a severe price downturn followed by prolonged stagnation and minimal probability of recovery. This presents a critical challenge for index construction: passive investing captures the "Ecstasy" of winners but systematically forces investors to hold the "Agony" of these imploding assets (at least until removal from the constituent index). Crucially, as explored by \citet{Cembalest2014, Cembalest2024}, these declines are not limited to speculative "junk" companies; a significant portion of losers display "healthy" fundamentals prior to collapse, suggesting traditional metrics fail to capture the dynamics preceding permanent capital decline.
 
 \section{Status Quo}
 
 \begin{enumerate}
-    \item \textbf{The Quality Trap:}  Recent literature has explored indicators, which are perceived to be synonymous with healthy stock fundamentals. \citet{Penman2018} suggest that the Book-to-Price ratio (B/P) is misleading. Low B/P values reflect uncertainty about future cash-flows rather than
+    \item \textbf{The Quality Trap:}  Recent literature has explored indicators which are perceived to be synonymous with healthy stock fundamentals. \citet{Penman2018} suggest that the Book-to-Price ratio (B/P) is misleading. Low B/P values reflect uncertainty about future cash-flows rather than
 "cheap" buying opportunities. Additionally, \citet{Altman2016} argue that, amongst others, profitability is time-varying and find low predictive ability for longer time-periods. Specifically, while they find that profitability ratios like Return on Assets (ROA) provide efficient accuracy for a short horizon of two years , these measures fail to be consistent predictors over a ten-year horizon. They observe that in multivariate models, profitability is rendered largely insignificant when tested against solvency measures, such as the Equity Ratio, which dominates the prediction of distress irrespective of the horizon length.
 
   \item \textbf{Predictive Ability:} Traditional bankruptcy models heavily relied on linear combinations of ratios, like the Z-score introduced by \citep{Altman1968}. Since then, a variety of
 risk-management models have been introduced, culminating in modern ML applications, such as
 Random Forest (RF) or support vector machines \citep{Barboza2017}. Even though logit/probit models
-work reasonable well, \citet{Jones2017} also recommends the use of more advanced machine-learning
+work reasonably well, \citet{Jones2017} also recommends the use of more advanced machine-learning
 methods, like AdaBoost or RF. \\
   
 \item \textbf{Misalignment of Prediction Horizons and Objectives:} 
@@ -193,7 +193,7 @@ outperform statistical models in predicting financial distress by capturing non-
 with a false positive rate of less than 3\%. \\
 
 While the literature has identified a variety of ML-methods for credit-risk modelling, 
-there is a lack of research for applying modern ML techniquers to the specific problem of 
+there is a lack of research on applying modern ML techniques to the specific problem of 
  \textit{market-based} catastrophic stock declines. Ensemble methods, like bagging and boosting,
  or Neural Networks are well suited to not only improve predictive accuracy, but also to 
  capture the time-series dynamics of individual stock risk. \\
@@ -242,7 +242,7 @@ This tests the hypothesis that avoiding \textit{implosions} (permanent loss) pro
 
 \subsection{Sub-Question 2: Portfolio Distinction}
 
-\textit{Does the "Implosion-Filtered" portfolio exhibit lower risk characteristics (measured by maximum drawdown and expected shortfall) than standard risk-controlling models (low volatility, low beta, ...)?} \\ 
+\textit{Does the "Implosion-Filtered" portfolio exhibit lower risk characteristics (measured by maximum drawdown and expected shortfall) than standard risk-controlling models (e.g., low volatility, low beta)?} \\ 
 
 %==== Chapter 3: Data =========================================================%
 

@@ -1,60 +1,20 @@
 %==== KNITR ===================================================================%
 
+<<echo=FALSE, eval = !knitr::is_latex_output()>>=
+library(knitr)
 
+Path <- file.path(here::here("")) ## You need to install the package first incase you do not have it.
+Directory <- file.path(Path, "01_Code/Proposal")
+Directory_LaTeX <- file.path(Directory, "ResearchProposal_TristanLeiter_h11815352.Rnw")
+setwd(Directory)
+
+# knit2pdf(Directory_LaTeX)
+
+@
 
 %==== START ===================================================================%
 
-\documentclass{report}\usepackage[]{graphicx}\usepackage[]{xcolor}
-% maxwidth is the original width if it is less than linewidth
-% otherwise use linewidth (to make sure the graphics do not exceed the margin)
-\makeatletter
-\def\maxwidth{ %
-  \ifdim\Gin@nat@width>\linewidth
-    \linewidth
-  \else
-    \Gin@nat@width
-  \fi
-}
-\makeatother
-
-\definecolor{fgcolor}{rgb}{0.345, 0.345, 0.345}
-\newcommand{\hlnum}[1]{\textcolor[rgb]{0.686,0.059,0.569}{#1}}%
-\newcommand{\hlstr}[1]{\textcolor[rgb]{0.192,0.494,0.8}{#1}}%
-\newcommand{\hlcom}[1]{\textcolor[rgb]{0.678,0.584,0.686}{\textit{#1}}}%
-\newcommand{\hlopt}[1]{\textcolor[rgb]{0,0,0}{#1}}%
-\newcommand{\hlstd}[1]{\textcolor[rgb]{0.345,0.345,0.345}{#1}}%
-\newcommand{\hlkwa}[1]{\textcolor[rgb]{0.161,0.373,0.58}{\textbf{#1}}}%
-\newcommand{\hlkwb}[1]{\textcolor[rgb]{0.69,0.353,0.396}{#1}}%
-\newcommand{\hlkwc}[1]{\textcolor[rgb]{0.333,0.667,0.333}{#1}}%
-\newcommand{\hlkwd}[1]{\textcolor[rgb]{0.737,0.353,0.396}{\textbf{#1}}}%
-\let\hlipl\hlkwb
-
-\usepackage{framed}
-\makeatletter
-\newenvironment{kframe}{%
- \def\at@end@of@kframe{}%
- \ifinner\ifhmode%
-  \def\at@end@of@kframe{\end{minipage}}%
-  \begin{minipage}{\columnwidth}%
- \fi\fi%
- \def\FrameCommand##1{\hskip\@totalleftmargin \hskip-\fboxsep
- \colorbox{shadecolor}{##1}\hskip-\fboxsep
-     % There is no \\@totalrightmargin, so:
-     \hskip-\linewidth \hskip-\@totalleftmargin \hskip\columnwidth}%
- \MakeFramed {\advance\hsize-\width
-   \@totalleftmargin\z@ \linewidth\hsize
-   \@setminipage}}%
- {\par\unskip\endMakeFramed%
- \at@end@of@kframe}
-\makeatother
-
-\definecolor{shadecolor}{rgb}{.97, .97, .97}
-\definecolor{messagecolor}{rgb}{0, 0, 0}
-\definecolor{warningcolor}{rgb}{1, 0, 1}
-\definecolor{errorcolor}{rgb}{1, 0, 0}
-\newenvironment{knitrout}{}{} % an empty environment to be redefined in TeX
-
-\usepackage{alltt}
+\documentclass{report}
 
 \usepackage[left=2cm, right=2cm, top=1cm, bottom=2cm]{geometry}
 
@@ -75,27 +35,74 @@
 \usepackage{natbib}
 \setcitestyle{authoryear,open={(},close={)}} %Citation-related commands
 
+%% Testing different layout.
+\usepackage{geometry}
+\usepackage{xcolor}
+
 % Required for Table.
 
 
 %%
 
-\title{Master Thesis - Research Proposal}
-\author{Tristan Leiter}
-\date{\today}
+% \title{Master Thesis - Research Proposal}
+% \author{Tristan Leiter}
+% \date{\today}
 
 %==== DOCUMENT START ==========================================================%
 
-\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
 \begin{document}
 
-\maketitle
+\begin{titlepage}
+    \newgeometry{top=3cm, bottom=3cm, left=2.5cm, right=2.5cm}
+    \centering
+    
+    % --- University Placeholder ---
+    % \includegraphics[width=0.4\textwidth]{logo.png} \par
+    {\scshape\LARGE Vienna University of Economics and Business \par}
+    \vspace{1cm}
+    {\scshape\Large Master Thesis Research Proposal \par}
+    
+    \vspace{2.5cm}
+    
+    % --- Title Section ---
+    \hrule height 2pt
+    \vspace{0.5cm}
+    { \huge \bfseries The Agony and the Ecstasy: \\[0.3cm] Constructing a "Crash-Filtered" Equity Index \\[0.2cm] using Machine Learning \par}
+    \vspace{0.5cm}
+    \hrule height 2pt
+    
+    \vspace{2cm}
+    
+    % --- Author Section ---
+    \Large
+    \textbf{Author:} \\
+    Tristan \textsc{Leiter}
+    
+    \vspace{1.5cm}
+    
+    % --- Metadata ---
+    \normalsize
+    \textbf{Submission Date:} \\
+    \today
+    
+    \vspace{1cm}
+    
+    \textbf{Supervisor:} \\
+    Univ.Prof. Dr. Kurt Hornik \\
+    Department of Finance, Accounting and Statistics
+    
+    \vfill
+    
+\end{titlepage}
+\restoregeometry
+
+% \maketitle
 
 %==== ABSTRACT ================================================================%
 
-\begin{abstract}
-This report demonstrates the integration of R code and its output within a LaTeX document using Sweave. It covers the basic structure of a report, including a summary, chapters with subchapters, and a bibliography.
-\end{abstract}
+% \begin{abstract}
+% This report demonstrates the integration of R code and its output within a LaTeX document using Sweave. It covers the basic structure of a report, including a summary, chapters with subchapters, and a bibliography.
+% \end{abstract}
 
 %==== Table of content ========================================================%
 
@@ -112,7 +119,7 @@ This report demonstrates the integration of R code and its output within a LaTeX
 
 Research by J.P. Morgan Asset Management highlights an empirical phenomenon referred to as "The Agony and the Ecstasy" \citep{Cembalest2014, Cembalest2024} revealing that equity indices, like the Russell 3000, are overwhelmingly influenced by extreme stock performances. While a small percentage of winners contribute the vast majority of excess returns, approximately 40\% of all constituents suffer a "catastrophic decline," which is defined as a drawdown of 70\% or more from their peak without a subsequent recovery. \\
 
-Recent literature formalizes this phenomenon as a \textbf{"Catastrophic Stock Implosion"} (CSI) \citep{Tewari2024}. Unlike standard volatility, an implosion represents a distinct market event characterized by a severe price downturn followed by prolonged stagnation and minimal probability of recovery. This presents a critical challenge for index construction: passive investing captures the "Ecstasy" of winners but systematically forces investors to hold the "Agony" of these imploding assets (atleast until removal from the constituent index). Crucially, as explored by \citep{Cembalest2014, Cembalest2024}, these declines are not limited to speculative "junk" companies; a significant portion of losers display "healthy" fundamentals prior to collapse, suggesting traditional metrics fail to capture the dynamics preceding permanent capital decline.
+Recent literature formalizes this phenomenon as a \textbf{"Catastrophic Stock Implosion"} (CSI) \citep{Tewari2024}. Unlike standard volatility, an implosion represents a distinct market event characterized by a severe price downturn followed by prolonged stagnation and minimal probability of recovery. This presents a critical challenge for index construction: passive investing captures the "Ecstasy" of winners but systematically forces investors to hold the "Agony" of these imploding assets (atleast until removal from the constituent index). Crucially, as explored by \citet{Cembalest2014, Cembalest2024}, these declines are not limited to speculative "junk" companies; a significant portion of losers display "healthy" fundamentals prior to collapse, suggesting traditional metrics fail to capture the dynamics preceding permanent capital decline.
 
 \section{Status Quo}
 
@@ -156,16 +163,25 @@ there is a lack of research for applying modern ML techniquers to the specific p
 % \end{enumerate}
 
 \subsection{Proposed Approach: The "Crash-Filtered" Index}
-This thesis proposes bridging the gap between distress prediction and active index construction. While \citet{Tewari2024} established the concept of Catastrophic Stock Implosion, it remains unknown whether these insights can be operationalized into a viable risk-mitigation strategy.
 
-To address the "Agony and Ecstasy" dilemma, this research aims to move from "pure volatility forecasting" to "probabilistic implosion modeling." The proposed methodology improves upon the status quo in three specific ways:
+This thesis proposes bridging the gap between distress prediction and active index construction. While \citet{Tewari2024} established the concept of Catastrophic Stock Implosion (CSI), it remains unknown whether these insights can be operationalized into a viable risk-mitigation strategy. To address the "Agony and Ecstasy" dilemma, this research moves from "pure volatility forecasting" to "probabilistic implosion modeling" through the following three-stage methodology:
 
 \begin{enumerate}
-    \item \textbf{Advanced Ensemble Modeling:} Utilizing Bagging and Boosting algorithms (e.g., XGBoost, CatBoost) as well as Neural Networks to handle the non-linear feature interactions of raw market and fundamental data.
-    \item \textbf{Temporal Dynamics with Deep Learning:} Extending the work of \cite{Jabeur2023} by incorporating Long Short-Term Memory (LSTM) networks. This allows the model to treat company health as a time-series problem, detecting the \textit{rate of change} in fundamentals that precedes a crash, potentially reducing the "lag" associated with traditional models.
-    \item \textbf{Predictive Exclusion Framework:} Constructing a "Crash-Filtered" index using Rolling-Forward Cross-Validation. Instead of the traditional binary exclusion (listing failure), this framework applies a probabilistic threshold. The goal is to systematically exclude identified "implosion" candidates while retaining the "Ecstasy" winners, thereby isolating the alpha generated purely by risk mitigation.
-    \item \textbf{Performance Evaluation:} The performance of the strategy will be evaluated by comparing the risk-adjusted returns and risk-characteristics of the filtered index against the unfiltered market-weighted benchmark and traditional volatility-weighted portfolios.
+    \item \textbf{Model Fitting and Selection:} \\
+    The research will model the probability of market-risk loss, specifically the CSI event, by adopting the definition established by \citet{Tewari2024}. The methodology extends current literature by moving beyond static snapshots of financial health. In addition to advanced ensemble methods (e.g., XGBoost, CatBoost) capable of handling non-linear interactions, this approach incorporates Deep Learning architectures, specifically Long Short-Term Memory (LSTM) networks. This extension allows the model to capture \textit{latent temporal dependencies} and the rate of change in fundamental deterioration, aiming to reduce the detection lag associated with traditional models.
+
+    \item \textbf{Index Construction:} \\
+    Based on the model outputs, a "Crash-Filtered" equity index will be constructed. This process involves a systematic re-weighting or exclusion mechanism that penalizes index constituents exhibiting a likelihood of implosion exceeding a calibrated threshold. The primary objective is to penalize identified "Agony" candidates (permanent capital loss or capital loss exceeding a threshold) while retaining the "Ecstasy" winners (usually featuring high volatility and returns). This distinction is critical to isolating the alpha generated purely by tail-risk mitigation, rather than by a generic low-beta factor tilt.
+
+    \item \textbf{Backtesting and Performance Evaluation:} \\
+    The efficacy of the strategy will be validated through out-of-sample backtesting using a rolling-forward cross-validation framework. The performance of the "Crash-Filtered" index will be benchmarked against:
+    \begin{itemize}
+        \item The unfiltered market-weighted benchmark (e.g., Russell 3000) to test for alpha generation.
+        \item Traditional volatility-weighted portfolios (e.g., Minimum Volatility indices) to test for superior drawdown characteristics.
+    \end{itemize}
+    Evaluation metrics will prioritize risk-adjusted returns and tail-risk characteristics.
 \end{enumerate}
+
 
 %==== Chapter 2: Research Question ============================================%
 
@@ -181,13 +197,11 @@ Based on the identified problem that standard metrics fail to distinguish betwee
 
 \textit{Can Machine Learning models (e.g., CatBoost, XGBoost or Neural Networks) calibrated to the definition of "Catastrophic Implosion" outperform traditional distress models (e.g., Altman Z-Score) in distinguishing between permanent capital loss and temporary drawdown?} \\
 
-This addresses the "Zombie State" gap, testing if ML can identify stocks that implode but do not necessarily go bankrupt. It also leverages the finding that advanced algorithms like CatBoost, XGBoost and Neural Networks provide higher accuracy in distress prediction than traditional linear models.
+This tests the hypothesis that avoiding \textit{implosions} (permanent loss) provides a distinct risk profile compared to avoiding \textit{volatility} (temporary noise), potentially allowing the investor to retain exposure to high-growth, high-volatility winners that do not implode.
 
 \subsection{Sub-Question 2: Portfolio Distinction}
 
 \textit{Does the "Implosion-Filtered" portfolio exhibit lower risk characteristics (measured by maximum drawdown and expected shortfall) than standard risk-controlling models (low volatility, low beta, ...)?} \\ 
-
-This tests the hypothesis that avoiding \textit{implosions} (permanent loss) provides a distinct risk profile compared to avoiding \textit{volatility} (temporary noise), potentially allowing the investor to retain exposure to high-growth, high-volatility winners that do not implode.
 
 %==== Chapter 3: Data =========================================================%
 

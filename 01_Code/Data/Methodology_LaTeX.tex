@@ -1,0 +1,219 @@
+%==== KNITR ===================================================================%
+
+
+
+%==== START ===================================================================%
+
+\documentclass{report}\usepackage[]{graphicx}\usepackage[]{xcolor}
+% maxwidth is the original width if it is less than linewidth
+% otherwise use linewidth (to make sure the graphics do not exceed the margin)
+\makeatletter
+\def\maxwidth{ %
+  \ifdim\Gin@nat@width>\linewidth
+    \linewidth
+  \else
+    \Gin@nat@width
+  \fi
+}
+\makeatother
+
+\definecolor{fgcolor}{rgb}{0.345, 0.345, 0.345}
+\newcommand{\hlnum}[1]{\textcolor[rgb]{0.686,0.059,0.569}{#1}}%
+\newcommand{\hlstr}[1]{\textcolor[rgb]{0.192,0.494,0.8}{#1}}%
+\newcommand{\hlcom}[1]{\textcolor[rgb]{0.678,0.584,0.686}{\textit{#1}}}%
+\newcommand{\hlopt}[1]{\textcolor[rgb]{0,0,0}{#1}}%
+\newcommand{\hlstd}[1]{\textcolor[rgb]{0.345,0.345,0.345}{#1}}%
+\newcommand{\hlkwa}[1]{\textcolor[rgb]{0.161,0.373,0.58}{\textbf{#1}}}%
+\newcommand{\hlkwb}[1]{\textcolor[rgb]{0.69,0.353,0.396}{#1}}%
+\newcommand{\hlkwc}[1]{\textcolor[rgb]{0.333,0.667,0.333}{#1}}%
+\newcommand{\hlkwd}[1]{\textcolor[rgb]{0.737,0.353,0.396}{\textbf{#1}}}%
+\let\hlipl\hlkwb
+
+\usepackage{framed}
+\makeatletter
+\newenvironment{kframe}{%
+ \def\at@end@of@kframe{}%
+ \ifinner\ifhmode%
+  \def\at@end@of@kframe{\end{minipage}}%
+  \begin{minipage}{\columnwidth}%
+ \fi\fi%
+ \def\FrameCommand##1{\hskip\@totalleftmargin \hskip-\fboxsep
+ \colorbox{shadecolor}{##1}\hskip-\fboxsep
+     % There is no \\@totalrightmargin, so:
+     \hskip-\linewidth \hskip-\@totalleftmargin \hskip\columnwidth}%
+ \MakeFramed {\advance\hsize-\width
+   \@totalleftmargin\z@ \linewidth\hsize
+   \@setminipage}}%
+ {\par\unskip\endMakeFramed%
+ \at@end@of@kframe}
+\makeatother
+
+\definecolor{shadecolor}{rgb}{.97, .97, .97}
+\definecolor{messagecolor}{rgb}{0, 0, 0}
+\definecolor{warningcolor}{rgb}{1, 0, 1}
+\definecolor{errorcolor}{rgb}{1, 0, 0}
+\newenvironment{knitrout}{}{} % an empty environment to be redefined in TeX
+
+\usepackage{alltt}
+
+\usepackage[left=2cm, right=2cm, top=1cm, bottom=2cm]{geometry}
+
+% Font.
+
+
+% Main packages.
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs} 
+\usepackage{rotating} 
+\usepackage{lmodern}
+
+% Citations.
+\usepackage{natbib}
+\setcitestyle{authoryear,open={(},close={)}} %Citation-related commands
+
+%% Testing different layout.
+\usepackage{geometry}
+\usepackage{xcolor}
+
+% Required for Table.
+
+
+%%
+
+% \title{Master Thesis - Research Proposal}
+% \author{Tristan Leiter}
+% \date{\today}
+
+%==== DOCUMENT START ==========================================================%
+
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\begin{document}
+
+\begin{titlepage}
+    \newgeometry{top=3cm, bottom=3cm, left=2.5cm, right=2.5cm}
+    \centering
+    
+    % --- University Placeholder ---
+    % \includegraphics[width=0.4\textwidth]{logo.png} \par
+    {\scshape\LARGE Vienna University of Economics and Business \par}
+    \vspace{1cm}
+    {\scshape\Large Master Thesis Data Methodology \par}
+    
+    \vspace{2.5cm}
+    
+    % --- Title Section ---
+    \hrule height 2pt
+    \vspace{0.5cm}
+    { \huge \bfseries The Agony and the Ecstasy: \\[0.3cm] Constructing a "Crash-Filtered" Equity Index \\[0.2cm] using Machine Learning \par}
+    \vspace{0.5cm}
+    \hrule height 2pt
+    
+    \vspace{2cm}
+    
+    % --- Author Section ---
+    \Large
+    \textbf{Author:} \\
+    Tristan \textsc{Leiter}
+    
+    \vspace{1.5cm}
+    
+    % --- Metadata ---
+    \normalsize
+    \textbf{Submission Date:} \\
+    \today
+    
+    \vspace{1cm}
+    
+    \textbf{Supervisor:} \\
+    Univ.Prof. Dr. Kurt Hornik \\
+    Department of Finance, Accounting and Statistics
+    
+    \vfill
+    
+\end{titlepage}
+\restoregeometry
+
+% \maketitle
+
+%==== ABSTRACT ================================================================%
+
+% \begin{abstract}
+% This report demonstrates the integration of R code and its output within a LaTeX document using Sweave. It covers the basic structure of a report, including a summary, chapters with subchapters, and a bibliography.
+% \end{abstract}
+
+%==== Table of content ========================================================%
+
+% \tableofcontents
+% \newpage
+
+%==== Chapter 1: Problem Description ==========================================%
+
+\chapter{Data Methodology}
+
+\section{Constituent Universe}
+
+
+\begin{enumerate}
+    \item \textbf{1. Whole sample:}  
+
+  \item \textbf{2. Aggregation:} 
+  
+\item \textbf{3. Selected Attributes:} 
+
+\item \textbf{4. Data Merging:} 
+
+
+\begin{itemize}
+    \item \textbf{Filter by Type:} 
+    
+    \item \textbf{Filter by Stock Lifetime:} 
+    
+\end{itemize}
+
+\end{enumerate}
+
+
+
+%==== Chapter 2: Research Question ============================================%
+
+\chapter{Research Question}
+
+
+%==== Chapter 3: Data =========================================================%
+
+
+
+
+
+%==== Chapter 4: Expected Results =============================================%
+
+% \chapter{Expected Results}
+% We expect to validate the findings regarding distress risk discussed by \citet{Campbell2005}.
+
+
+%==== Chapter 5: Methodology ==================================================%
+
+
+
+%==== Chapter 6: Research Background ==========================================%
+
+
+
+%==== Chapter 7: References ===================================================%
+
+% \bibliographystyle{plainnat} 
+% \bibliography{references}
+
+%==== Appendix ================================================================%
+
+% \appendix 
+% 
+% \chapter{Overview}
+
+%==== END =====================================================================%
+
+\end{document}

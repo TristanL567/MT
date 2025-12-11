@@ -1,0 +1,184 @@
+%==== KNITR ===================================================================%
+
+<<echo=FALSE, eval = !knitr::is_latex_output()>>=
+library(knitr)
+
+Path <- file.path(here::here("")) ## You need to install the package first incase you do not have it.
+Directory <- file.path(Path, "01_Code/Data")
+Directory_LaTeX <- file.path(Directory, "Methodology_LaTeX.Rnw")
+setwd(Directory)
+
+# knit2pdf(Directory_LaTeX)
+
+@
+
+%==== START ===================================================================%
+
+\documentclass{report}
+
+\usepackage[left=2cm, right=2cm, top=1cm, bottom=2cm]{geometry}
+
+% Font.
+
+
+% Main packages.
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs} 
+\usepackage{rotating} 
+\usepackage{lmodern}
+
+% Citations.
+\usepackage{natbib}
+\setcitestyle{authoryear,open={(},close={)}} %Citation-related commands
+
+%% Testing different layout.
+\usepackage{geometry}
+\usepackage{xcolor}
+
+% Required for Table.
+
+
+%%
+
+% \title{Master Thesis - Research Proposal}
+% \author{Tristan Leiter}
+% \date{\today}
+
+%==== DOCUMENT START ==========================================================%
+
+\begin{document}
+
+\begin{titlepage}
+    \newgeometry{top=3cm, bottom=3cm, left=2.5cm, right=2.5cm}
+    \centering
+    
+    % --- University Placeholder ---
+    % \includegraphics[width=0.4\textwidth]{logo.png} \par
+    {\scshape\LARGE Vienna University of Economics and Business \par}
+    \vspace{1cm}
+    {\scshape\Large Master Thesis Data Methodology \par}
+    
+    \vspace{2.5cm}
+    
+    % --- Title Section ---
+    \hrule height 2pt
+    \vspace{0.5cm}
+    { \huge \bfseries The Agony and the Ecstasy: \\[0.3cm] Constructing a "Crash-Filtered" Equity Index \\[0.2cm] using Machine Learning \par}
+    \vspace{0.5cm}
+    \hrule height 2pt
+    
+    \vspace{2cm}
+    
+    % --- Author Section ---
+    \Large
+    \textbf{Author:} \\
+    Tristan \textsc{Leiter}
+    
+    \vspace{1.5cm}
+    
+    % --- Metadata ---
+    \normalsize
+    \textbf{Submission Date:} \\
+    \today
+    
+    \vspace{1cm}
+    
+    \textbf{Supervisor:} \\
+    Univ.Prof. Dr. Kurt Hornik \\
+    Department of Finance, Accounting and Statistics
+    
+    \vfill
+    
+\end{titlepage}
+\restoregeometry
+
+% \maketitle
+
+%==== ABSTRACT ================================================================%
+
+% \begin{abstract}
+% This report demonstrates the integration of R code and its output within a LaTeX document using Sweave. It covers the basic structure of a report, including a summary, chapters with subchapters, and a bibliography.
+% \end{abstract}
+
+%==== Table of content ========================================================%
+
+% \tableofcontents
+% \newpage
+
+%==== Chapter 1: Problem Description ==========================================%
+
+\chapter{Data Methodology}
+
+\section{Constituent Universe}
+
+
+\begin{enumerate}
+    \item \textbf{Whole sample:}  
+
+  \item \textbf{Aggregation:} 
+  
+\item \textbf{Selected Attributes:} 
+
+\item \textbf{Data Merging:} 
+
+
+\begin{itemize}
+    \item \textbf{Filter by Type:} Exclude all for which "securitysubtype" matches "FUND".
+    Other ETFs or Mutual Funds still remain. This issue still needs to be resolved.
+    
+    \item \textbf{Primary Exchange:} AMEX, NASDAQ or NYSE.
+    
+    \item \textbf{Removal Date:} The removal date from the three stock exchanges is after 
+        1966-01-01 to allow for atleast 5 years of data.
+
+    \item \textbf{Filter by Stock Lifetime:} All constituents for which the lifetime is greater or equal to 5 years.
+    
+\end{itemize}
+
+\end{enumerate}
+
+
+
+%==== Chapter 2: Research Question ============================================%
+
+\chapter{Research Question}
+
+
+%==== Chapter 3: Data =========================================================%
+
+
+
+
+
+%==== Chapter 4: Expected Results =============================================%
+
+% \chapter{Expected Results}
+% We expect to validate the findings regarding distress risk discussed by \citet{Campbell2005}.
+
+
+%==== Chapter 5: Methodology ==================================================%
+
+
+
+%==== Chapter 6: Research Background ==========================================%
+
+
+
+%==== Chapter 7: References ===================================================%
+
+% \bibliographystyle{plainnat} 
+% \bibliography{references}
+
+%==== Appendix ================================================================%
+
+% \appendix 
+% 
+% \chapter{Overview}
+
+%==== END =====================================================================%
+
+\end{document}

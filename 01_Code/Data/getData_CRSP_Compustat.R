@@ -135,7 +135,7 @@ stock_master_list <- lifetime_stats |>
   select(
     permno, ticker, issuernm, is_active, 
     listing_date, removal_date, lifetime_years,
-    delactiontype, delreasontype, # <--- Your target variables
+    delactiontype, delreasontype,
     securitytype, securitysubtype, sharetype, shareclass,
     siccd, naics, primaryexch, n_changes
   ) |>
@@ -148,7 +148,6 @@ glimpse(stock_master_list)
 
 dim(stock_master_list)
 unique(stock_master_list$securitytype)
-which(duplicated(stock_master_list_filtered$issuernm))
 
 ## 6A. Filter for EQUITY (and NA) only.
 stock_master_list_filtered <- stock_master_list |>
@@ -159,41 +158,178 @@ stock_master_list_filtered <- stock_master_list |>
     primaryexch %in% c("N", "A", "Q") # NYSE, AMEX, NASDAQ
   )
 
-## 6B. filter for any remaining ETFs or mutual funds.
-Filter_Output <- filterFunds(Input = stock_master_list_filtered)
-stock_master_list_filtered <- Filter_Output[[""]]
+## 6B. filter for any remaining ETFs or mutual funds (not necessary if filtered for the exchanges before).
+# Filter_Output <- filterFunds(Input = stock_master_list_filtered)
+# stock_master_list_filtered <- Filter_Output[[""]]
+# removed <- Filter_Output[["removed"]]
+
+## 6B. filter for companies with two share classes, but same company characteristics.
+
+stock_master_list_filtered <- stock_master_list_filtered |>
+  group_by(issuernm) |>
+  arrange(desc(lifetime_years), permno) |>
+  slice(1) |>
+  ungroup()
+
+summary(stock_master_list_filtered)
 
 ##=========================================================================#
-## 3. Filter Universe.
+## 3. Retrieve the constiuent characteristics.
 ##=========================================================================#
 
 # Filter for the "Investable Universe"
 # We do this first to avoid pulling data for dead penny stocks we won't trade.
-universe_permno <- stock_master_list_filtered |>
-  select(permno)
+universe_subset <- stock_master_list_filtered |>
+  select(permno, listing_date, removal_date)
 
 ##=========================================================================#
 ## 4. Stock Prices & Returns (Monthly)
 ##=========================================================================#
 
-crsp_monthly <- msf_db |>
-  filter(mthcaldt >= start_date & mthcaldt <= end_date) |>
+# 1. Extract the list of target Permnos
+target_permnos <- universe_subset$permno
+
+# 2. Retrieve Raw Data from WRDS (Server Side)
+raw_prices <- msf_db |>
+  filter(permno %in% target_permnos) |> 
   select(permno, mthcaldt, mthret, mthprc, shrout) |>
-  inner_join(universe_permno, by = "permno") |>
-  filter(mthcaldt >= secinfostartdt & mthcaldt <= secinfoenddt) |>
-  collect() |>
-  mutate(
+  collect()
+
+# 3. Merge & Filter (Local R Side)
+crsp_monthly <- raw_prices |>
+  inner_join(universe_subset, by = "permno") |>
+  filter(mthcaldt >= "1960-01-01") |>
+  filter(mthcaldt >= listing_date & mthcaldt <= removal_date) |>
+    mutate(
     date = ymd(mthcaldt),
-    # Handle negative prices (CRSP convention for bid/ask average)
-    prc = abs(mthprc),
-    # 2a. Compute Log Returns
-    # Simple Return: P_t / P_{t-1} - 1
-    # Log Return: ln(P_t / P_{t-1}) = ln(1 + Simple Return)
-    log_ret = log(1 + mthret),
-    mkt_cap = prc * shrout * 1000 # Calculate Market Cap
+    prc = abs(mthprc), 
+    mthret = if_else(is.na(mthret), 0, mthret),
+    log_ret = if_else(1 + mthret > 0, log(1 + mthret), NA_real_),
+    mkt_cap = prc * shrout * 1000 
   ) |>
   select(permno, date, ret = mthret, log_ret, prc, mkt_cap) |>
-  arrange(permno, date)
+  arrange(permno, date) |>
+  filter(!is.na(prc))
+
+# Preview
+glimpse(crsp_monthly)
+
+##=========================================================================#
+## 5. Check for catastrophic implosions (same as the Tewari et al. Methodology)
+##=========================================================================#
+
+# 1. Define Parameters (from Appendix)
+PARAM_C <- -0.8   # Crash threshold (Drawdown <= -80%)
+PARAM_M <- -0.2   # Recovery ceiling (Price cannot recover above -20% of Peak)
+PARAM_T <- 18     # Zombie Period: 78 weeks approx 18 months
+
+# 2. Calculate Peak and Drawdown
+monthly_signals <- crsp_monthly |>
+  group_by(permno) |>
+  arrange(date) |>
+  mutate(
+    running_max_price = cummax(prc),
+    drawdown = (prc / running_max_price) - 1,
+    is_crash_zone = drawdown <= PARAM_C
+  ) |>
+  ungroup()
+
+# 3. Verify the "Zombie" Condition (Look-Ahead)
+implosion_universe <- monthly_signals |>
+  group_by(permno) |>
+  mutate(
+    recovery_ceiling = running_max_price * (1 + PARAM_M),
+      future_max_price = zoo::rollapply(prc, width = PARAM_T, 
+                                      FUN = max, 
+                                      align = "left", 
+                                      fill = NA)
+  ) |>
+  ungroup() |>
+  filter(
+    # Criteria 1: The Crash (Drawdown < -80%)
+    is_crash_zone,
+    
+    # Criteria 2: The Zombie Phase (Next 18m max price < Recovery Ceiling)
+    future_max_price <= recovery_ceiling
+  )
+
+# 4. Final List of Failed Companies
+# A stock might flag as "failed" for 50 months in a row. 
+# We only want the FIRST date it happened (the specific moment of failure).
+failed_companies <- implosion_universe |>
+  group_by(permno) |>
+  summarise(
+    implosion_date = min(date),
+    peak_price = first(running_max_price[date == min(date)]),
+    crash_price = first(prc[date == min(date)]),
+    lifetime_drawdown = first(drawdown[date == min(date)])
+  ) |>
+  ungroup()
+
+# Preview results
+print(paste("Identified", nrow(failed_companies), "failed companies."))
+head(failed_companies)
+
+##=========================================================================#
+## 6. Setup the data in the long-format.
+##=========================================================================#
+
+# 1. Define Modeling Horizons (in Months)
+PREDICTION_HORIZON <- 12  # We want to predict failure 12 months ahead
+ZOMBIE_WINDOW      <- 18  # The "dead" period defined in your appendix (78 weeks)
+
+# 2. Join Monthly Data with Failure Dates
+# We keep all historical months for all stocks (failed or not)
+model_universe <- crsp_monthly |>
+  left_join(failed_companies |> select(permno, implosion_date), 
+            by = "permno") |>
+  mutate(
+    # A. Calculate Time Distance to Failure (in Months)
+    # Negative values mean the failure is in the past.
+    # Positive values mean the failure is in the future.
+    months_dist = interval(date, implosion_date) %/% months(1),
+    # Handle non-failed companies (infinite distance)
+    months_dist = ifelse(is.na(months_dist), 9999, months_dist)
+  )
+
+# 3. Apply the "Recovery" & "Target" Logic
+ml_panel <- model_universe |>
+  mutate(
+    # --- A. The Zombie Dummy (State Flag) ---
+    # Active if date is AFTER implosion but WITHIN the 18-month window
+    is_zombie = if_else(months_dist < 0 & months_dist >= -ZOMBIE_WINDOW, 1, 0),
+    
+    # --- B. The Prediction Target (Y) ---
+    TARGET_12M = case_when(
+      # 1. Danger Zone: Failure is 1-12 months away
+      months_dist >= 0 & months_dist <= PREDICTION_HORIZON ~ 1,
+      
+      # 2. Zombie Zone: Currently crashing. 
+      # We set Target to NA because predicting "will I crash?" is invalid 
+      # when you are currently crashing.
+      is_zombie == 1 ~ NA_real_,
+      
+      # 3. Safe/Survivor: Healthy or Recovered (>18m post-crash)
+      TRUE ~ 0
+    )
+  ) |>
+  # Note: We do NOT filter out NA targets yet. We keep the rows.
+  select(permno, date, mkt_cap, prc, ret, TARGET_12M, is_zombie, months_dist, implosion_date)
+
+##=========================================================================#
+## 7. Descriptive statistics of the dataset.
+##=========================================================================#
+
+
+
+
+
+
+
+
+
+
+
 
 ##=========================================================================#
 ## 5. Balance Sheet with EXACT Timestamps (Quarterly)

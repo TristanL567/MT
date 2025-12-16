@@ -125,7 +125,6 @@ The study utilizes the Center for Research in Security Prices (CRSP) database, s
 \begin{enumerate}
     \item \textbf{Whole Sample:} The initial sample includes all unique permanent identifiers (\texttt{permno}) in the CRSP database, covering the entire history of US-listed securities to eliminate survivorship bias.
     \item \textbf{Aggregation:} Data is aggregated by \texttt{permno} to define the distinct trading lifetime, calculated as the duration between the earliest listing date and the final removal date.
-    \item \textbf{Selected Attributes:} A "Terminal Attribute" approach is adopted, selecting descriptive characteristics (e.g., Ticker, Exchange) from the security's final available record to ensure consistent grouping.
     \item \textbf{Filtering Criteria:} The universe is subjected to the following filters:
     \begin{itemize}
         \item \textbf{Security Type:} Restricted to common equities (\texttt{securitytype="EQTY"}, \texttt{sharetype="COM"}), explicitly excluding ETFs and other Mutual Funds.
@@ -233,6 +232,18 @@ Path_Charts <- file.path(Charts_Path, "01_Defaults_over_Time.png")
     \label{fig:implosions_year}
 \end{figure}
 
+<<echo=FALSE, eval=TRUE>>=
+Path_Charts <- file.path(Charts_Path, "01b_Defaults_over_Time_Tewari.png")
+@
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.9\textwidth, keepaspectratio]{\Sexpr{Path_Charts}}
+  \caption{\textbf{Temporal Distribution of Catastrophic Implosions (1960--2024).}
+    The bar chart is obtained from \citet{Tewari2024} and it displays the frequency of identified CSI events by year. Significant clustering is observed during major market corrections.}
+    \label{fig:implosions_year_tewari}
+\end{figure}
+
 Figure \ref{fig:top3_ind} further decomposes these events by industry, highlighting how different sectors drive the failure rate in different market cycles (e.g., Tech in 2000 vs. Biotech/Pharma in 2021).
 
 <<echo=FALSE, eval=TRUE>>=
@@ -252,8 +263,6 @@ Path_Charts <- file.path(Charts_Path, "02_Top_Sectors.png")
 
 To enable predictive modeling, the data was transformed into a target-oriented panel. The primary target variable, \texttt{TARGET\_12M}, is set to 1 if the stock is within 12 months of a confirmed CSI event. \\
 
-THIS WILL BE CRUCIAL. HOW SHOULD IT BE CLASSIFIED?
-
 \subsection{Post-Implosion Outcome Analysis}
 
 We analyze the long-term fate of firms after the 18-month "Zombie" period to quantify the "Agony and Ecstasy" dynamic. Figure \ref{fig:sample_grid} visualizes a random sample of these trajectories, with the blue shaded region representing the 18-month stagnation period.
@@ -271,7 +280,19 @@ Path_Charts <- file.path(Charts_Path, "03_Sample_of_Implosions.png")
     \label{fig:sample_grid}
 \end{figure}
 
-As shown in Table \ref{tab:outcomes}, while 30\% of firms stagnate or delist ("Agony"), approximately 33\% achieve strong recovery ("Ecstasy"), justifying the need for a dynamic exclusion model rather than a permanent blacklist.
+<<echo=FALSE, eval=TRUE>>=
+Path_Charts <- file.path(Charts_Path, "03b_Sample_of_Implosions_Tewari.png")
+@
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\textwidth, keepaspectratio]{\Sexpr{Path_Charts}}
+    \caption{\textbf{Sample of Catastrophic Implosion Trajectories.}
+    The chart is obtained from \citet{Tewari2024}. The shaded blue area indicates the 18-month "Zombie Period" ($T$) following the initial crash, during which the price failed to recover above the threshold ($M$).}
+    \label{fig:sample_grid_tewari}
+\end{figure}
+
+As shown in Table \ref{tab:outcomes}, while 30\% of firms stagnate or delist ("Agony"), approximately 33\% achieve a strong recovery ("Ecstasy"; defined as a recovery with a subsequent geometric annualized return of more than 10\%), justifying the need for a dynamic exclusion model rather than a permanent blacklist.
 
 \begin{table}[h]
 \centering
@@ -288,6 +309,29 @@ Zombie State (Delisted) & 9 & 0.38\% \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\section{Class Imbalance}
+
+<<echo=FALSE, eval=TRUE>>=
+Path_Charts <- file.path(Charts_Path, "04_Failure_Rate_Over_Time.png")
+@
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\textwidth, keepaspectratio]{\Sexpr{Path_Charts}}
+    \caption{\textbf{CSI vs Market Breadth.}
+    The grey bar charts show the number of companies (constituent universe) per year (left hand side). The red
+    line depicts the failure rate (=CSI event) per year. It spikes during the crashes of 1973-74 (Oil Shock), 2000-2001 (DotCom) and GFC (2008). The Covid-Crisis (2020) is not long enough for a lot of companies to match the CSI definition (they recover quickly).}
+    \label{fig:sample_grid_tewari}
+\end{figure}
+
+An interesting insight is that the number of US public companies in this constituent universe grows monotonically over time. Typically, the number of US public companies peaked in 1996 (at roughly 8,000) and then declined steadily to about 4,000 by 2012 (the "Listing Gap"). \\
+
+This is an effect of the initial filter (lifetime years greater than 4.99), which strongly reshapes the universe.
+I filtered out the penny stocks and short-lived IPOs, which might distort the ML-models.
+Thus, with this approach the model would not be appicable applicable to IPOs or young companies (age less than 5). \\
+
+The "Look-ahead" Bias: In the 1960s/70s, the bars are very low. This is likely because only the "winners" from that era had enough data to survive the filters and make it into digital databases like WRDS in a clean format.
 
 %==============================================================================
 % Chapter: Questions to discuss
@@ -306,12 +350,12 @@ I am critically evaluating the soundness of the Catastrophic Stock Implosion (CS
 
 \section{Which frequency to use?}
 
-Tewari et al. (2024) utilize a static annual framework ($t$ predicts $t+1$). However, accounting data is available quarterly, and market data is available daily.
+\citet{Tewari2024} utilize a static annual framework ($t$ predicts $t+1$). However, accounting data is available quarterly, and market data is available monthly.
 
-\textbf{Question:} Do you agree with shifting to a **monthly rolling window** approach?
+\textbf{Question:} Do you agree with shifting to a *quarterly rolling window* approach?
 \begin{itemize}
-    \item Instead of one prediction per year, we update $P(\text{Implosion})$ every month using the latest available fundamental and market data.
-    \item \textit{Target Definition:} $Y_{i,t} = 1$ if stock $i$ implodes within the next 12 months $[t, t+12]$.
+    \item Instead of one prediction per year, we update every quarter using the latest available fundamental and market data.
+    \item \textit{Target Definition:} $Y_{i,t} = 1$ if stock $i$ implodes within the next 4 quarters $[t, t+4]$.
     \item \textit{Rationale:} This better mimics active risk management and significantly increases the effective sample size ($N \times T$), though it introduces serial correlation that must be addressed during validation.
 \end{itemize}
 
@@ -323,11 +367,15 @@ The reference paper explicitly removes data points following an implosion from t
 \begin{itemize}
     \item My understanding is that we are building an \textit{Ex-Ante} Early Warning System (predicting entry into distress), not a survival analysis model.
     \item Therefore, removing "Zombie" rows prevents look-ahead bias and forces the model to learn only pre-crash signals.
+        \item Including data after an "Implosion" could allow our model to reduce the impact
+        of False Positives. This could be dealt with using a rolling window approach.
 \end{itemize}
 
 \section{Probabilistic Risk Score vs. Binary Classification}
 
-While the target variable is binary (Implosion vs. Survival), classification models (e.g., Logistic Regression, XGBoost) natively output a conditional probability $P(Y=1 | X)$.
+I think the reasonable way would be to go for the classic Binary Classification case. If a firm fulfills the CSI characteristics, it is classified as a 1 and 0 otherwise. Possible extensions could include the following: \\
+
+While the target variable is binary (Implosion vs. Survival), classification models (e.g., Logistic Regression, XGBoost) natively output a conditional probability $P(Y=1 | X)$. \\
 
 \textbf{Question:} Can we frame the final output as a continuous "Implosion Probability Score" rather than a hard binary flag?
 \begin{itemize}
@@ -337,25 +385,92 @@ While the target variable is binary (Implosion vs. Survival), classification mod
 
 \section{The Precision-Recall Trade-off}
 
-Tewari et al. (2024) prioritize Recall (catching as many crashes as possible) over Precision, arguing that missing a crash is worse than a false alarm. However, in a practical investment universe, low precision leads to excessive exclusion of healthy stocks.
+\citet{Tewari2024} prioritize Recall (catching as many crashes as possible) over Precision, arguing that missing a crash is worse than a false alarm. However, in a practical investment universe, low precision leads to excessive exclusion of healthy stocks.
 
-\textbf{Question:} For the purpose of this thesis, should I optimize for a balanced metric (like ROC-AUC) or specifically target a high-Recall metric (like F2-Score)?
+\textbf{Question:} For the purpose of this thesis, should I optimize for a balanced metric (like ROC-AUC) or specifically target a high-Recall metric (like F2-Score)? For \citet{Tewari2024} it seems to work out as False Positives are less than 3\%.
 
 
-\section{Proposed Modeling Framework}Based on the characteristics of the dataset and the research objectives, this study adopts a \textbf{probabilistic classification framework} tailored for active risk management. The proposed methodology deviates from static annual predictions in favor of a dynamic, rolling-window approach that better mimics real-world investment constraints.\subsection{Prediction Horizon and Frequency}In contrast to the static annual approach used in prior literature \citep{Tewari2024}, we implement a monthly rolling window framework. At each month $t$, the model utilizes the most recent available information (market data from month $t$ and fundamental data with appropriate reporting lags) to predict the probability of a Catastrophic Stock Implosion (CSI) occurring within the subsequent 12 months $[t+1, t+12]$.The target variable is defined as:$$Y_{i,t} = 
+\section{Proposed Modeling Framework}
+
+\subsection{Prediction Horizon and Frequency}In contrast to the static annual approach used in prior literature \citep{Tewari2024}, we implement a quarterly rolling window framework. At each quarter $t$, the model utilizes the most recent available information (market data from month $t$ and fundamental data with appropriate reporting lags) to predict the probability of a Catastrophic Stock Implosion (CSI) occurring within the subsequent 4 quarters $[t+1, t+4]$.The target variable is defined as:$$Y_{i,t} = 
 \begin{cases} 
-1 & \text{if stock } i \text{ triggers a CSI event in } [t+1, t+12] \\
+1 & \text{if stock } i \text{ triggers a CSI event in } [t+1, t+4] \\
 0 & \text{otherwise}
 \end{cases}$$
 
-This increases the effective sample size and allows for "point-in-time" risk assessment, enabling the detection of distress signals as they emerge rather than waiting for fiscal year-end updates.\subsection{Censoring and Bias Prevention}To ensure the model functions as an \textit{ex-ante} early warning system, we apply strict censoring to the "Zombie Periods." Data points corresponding to the 18-month monitoring window following a triggered implosion are excluded from the training set. This prevents the model from "learning" obvious distress signals (e.g., price already down 90\%) after the event has occurred, forcing it to focus exclusively on leading indicators present \textit{before} the crash.\subsection{Probabilistic Risk Scoring}While the ground truth is binary (Implosion vs. Survival), the model is optimized using a Log-Loss (Cross-Entropy) objective function to output a continuous conditional probability score:$$\hat{P}_{i,t} = P(Y_{i,t} = 1 \mid \mathbf{X}_{i,t})$$This output is interpreted as a "Implosion Risk Score" ranging from 0 to 1. This granular metric allows for the ranking of securities by risk level (e.g., separating "High Risk" from "Critical Risk") and enables the construction of flexible exclusion thresholds (e.g., "Exclude top decile") rather than relying on a rigid binary classification boundary.
+This increases the effective sample size and allows for "point-in-time" risk assessment, enabling the detection of distress signals as they emerge rather than waiting for fiscal year-end updates.
 
+\subsection{Censoring and Bias Prevention}To ensure the model functions as an \textit{ex-ante} early warning system, we apply strict censoring to the "Zombie Periods." Data points corresponding to the 18-month monitoring window following a triggered implosion are excluded from the training set. This prevents the model from "learning" obvious distress signals (e.g., price already down 90\%) after the event has occurred, forcing it to focus exclusively on leading indicators present \textit{before} the crash.
+
+%==============================================================================
+% Chapter: Refined Research Design & Evaluation
+%==============================================================================
+\chapter{Refined Research Design \& Evaluation}
+
+Based on the preliminary diagnostics of the failure rate (which correctly captures the 1974, 2000, and 2008 crises) and the constituent universe (which is biased toward mature firms), the following methodological refinements are proposed to ensure the model captures structural distress rather than random market noise.
+
+\section{Cross-Validation Strategy: The Expanding Window}
+
+Unlike standard time-series forecasting, corporate implosions are rare events that cluster heavily during specific economic regimes (e.g., the Dot-Com Bubble or the Great Financial Crisis). A standard rolling window (e.g., "train on 10 years, shift forward 1 year") risks "forgetting" these critical lessons. For instance, a model trained on a 2010--2019 window would learn that "stocks never fail," leading to catastrophic under-prediction during a subsequent shock like COVID-19.
+
+To mitigate this, we adopt an **Anchored Expanding Window** (Walk-Forward) approach:
+
+
+\begin{enumerate}
+    \item \textbf{Anchored Start:} The training set always begins at the start of the sample (1960).
+    \item \textbf{Expansion:} For each iteration $k$, the training window extends from $1960$ to year $t_k$.
+    \item \textbf{Out-of-Sample Test:} The model is tested on the subsequent year $t_k + 1$.
+\end{enumerate}
+
+This ensures that once the model "sees" a crisis (e.g., 2008), that data remains in its memory banks forever, preventing the model from becoming complacent during long bull markets.
+
+\section{Feature Engineering: Common-Sizing and Standardization}
+
+To ensure the model learns fundamental fragility rather than nominal size, all balance sheet features are standardized prior to training. The preprocessing pipeline follows three steps:
+
+\begin{enumerate}
+    \item \textbf{Common-Sizing:} All nominal values are scaled by Total Assets ($AT$) or Market Capitalization to create ratios (e.g., Debt/Assets, Cash/Assets). This neutralizes the size factor, ensuring a small cap firm with 90\% leverage is treated similarly to a large cap firm with 90\% leverage.
+    % \item \textbf{Winsorization:} Financial ratios frequently exhibit extreme outliers (e.g., a firm with near-zero equity creating infinite ROE). We clip all continuous features at the 1st and 99th percentiles to prevent these outliers from distorting the gradient descent process.
+    % \item \textbf{Z-Score Normalization:} Finally, features are centered ($Mean=0$) and scaled ($SD=1$) to ensure convergence stability across different feature types.
+\end{enumerate}
+
+\section{Evaluation Philosophy: Fragility Identification over Market Timing}
+
+Given that the exact timing of an implosion is often triggered by exogenous shocks (e.g., a pandemic or oil embargo) which are inherently unpredictable, the objective of this thesis is refined from "Predicting Crashes" to **"identifying Fundamental Fragility."**
+
+The model is evaluated not on its ability to predict the exact day of a crash, but on its ability to sort firms into "Risk Buckets" that disproportionately capture failures when a shock occurs.
+
+\subsection{The "Sorting" Test (Quantile Portfolios)}
+
+To validate this, we utilize a **Quantile Sorting Approach** rather than simple binary accuracy:
+
+\begin{enumerate}
+    \item At the start of each test year, the model ranks the entire universe of stocks based on their predicted "Implosion Probability" ($P$).
+    \item Stocks are sorted into Quintiles ($Q1$ = Safest, $Q5$ = Most Fragile).
+    \item We track the realized failure rate within the top quintile ($Q5$) over the subsequent 12 months.
+\end{enumerate}
+
+\begin{figure}[h]
+\centering
+% Placeholder for the chart you will generate later
+% \includegraphics[width=0.9\textwidth]{Path_to_Quintile_Chart}
+    \caption{\textbf{Conceptual Validation: The "Dry Forest" Hypothesis.}
+    If the model is successful, the High-Risk portfolio (Q5) should capture the majority of realized failures during crisis years, confirming that the model correctly identified the "driest wood" in the forest before the spark hit.}
+    \label{fig:sorting_concept}
+\end{figure}
+
+
+
+\subsection{Success Metrics}
+Success is defined by the **Top-Decile Lift**:
+$$ \text{Lift} = \frac{\text{\% of Failures captured in Top Decile}}{\text{10\% (Random Guess Baseline)}} $$
+A Lift $> 1$ indicates the model is adding information. In financial distress literature, a Lift $> 3$ (capturing 30\% of failures in the top 10\% of sorted stocks) is considered a robust result.
 
 
 %==== Chapter 7: References ===================================================%
 
-% \bibliographystyle{plainnat} 
-% \bibliography{references}
+\bibliographystyle{plainnat}
+\bibliography{references}
 
 %==== Appendix ================================================================%
 

@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2025.1.30)  14 DEC 2025 23:22
+This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2025.1.30)  16 DEC 2025 14:23
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -337,7 +337,11 @@ File: t1lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 File: l3backend-pdftex.def 2024-05-08 L3 backend support: PDF output (pdfTeX)
 \l__color_backend_stack_int=\count304
 \l__pdf_internal_box=\box55
-) (./Methodology_LaTeX.aux)
+) (./Methodology_LaTeX.aux
+
+LaTeX Warning: Label `fig:sample_grid_tewari' multiply defined.
+
+)
 \openout1 = `Methodology_LaTeX.aux'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 96.
@@ -446,32 +450,32 @@ LaTeX Font Info:    Trying to load font information for T1+lmtt on input line 16
 (c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/tex/latex/lm/t1lmtt.fd
 File: t1lmtt.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 )
-LaTeX Font Info:    Trying to load font information for TS1+lmr on input line 170.
+LaTeX Font Info:    Trying to load font information for TS1+lmr on input line 169.
 (c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/tex/latex/lm/ts1lmr.fd
 File: ts1lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 )
-LaTeX Font Info:    Trying to load font information for OT1+lmr on input line 185.
+LaTeX Font Info:    Trying to load font information for OT1+lmr on input line 184.
 (c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/tex/latex/lm/ot1lmr.fd
 File: ot1lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 )
-LaTeX Font Info:    Trying to load font information for OML+lmm on input line 185.
+LaTeX Font Info:    Trying to load font information for OML+lmm on input line 184.
 (c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/tex/latex/lm/omllmm.fd
 File: omllmm.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 )
-LaTeX Font Info:    Trying to load font information for OMS+lmsy on input line 185.
+LaTeX Font Info:    Trying to load font information for OMS+lmsy on input line 184.
 (c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/tex/latex/lm/omslmsy.fd
 File: omslmsy.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 )
-LaTeX Font Info:    Trying to load font information for OMX+lmex on input line 185.
+LaTeX Font Info:    Trying to load font information for OMX+lmex on input line 184.
 (c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/tex/latex/lm/omxlmex.fd
 File: omxlmex.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 )
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <10> on input line 185.
+(Font)              <10> on input line 184.
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <7> on input line 185.
+(Font)              <7> on input line 184.
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <5> on input line 185.
+(Font)              <5> on input line 184.
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
@@ -481,7 +485,7 @@ LaTeX Warning: `!h' float specifier changed to `!ht'.
 pdfTeX warning (ext4): destination with the same identifier (name{page.1}) has been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.240 \chapter
+l.239 \chapter
               {Methodology} [1
 
 
@@ -489,85 +493,137 @@ l.240 \chapter
 
 [2]
 Chapter 2.
-
-Package natbib Warning: Citation `Tewari2024' on page 3 undefined on input line 244.
-
-<C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01_Defaults_over_Time.png, id=112, 904.5795pt x 441.5697pt>
+<C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01_Defaults_over_Time.png, id=137, 904.5795pt x 441.5697pt>
 File: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01_Defaults_over_Time.png Graphic file (type png)
 <use C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01_Defaults_over_Time.png>
-Package pdftex.def Info: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01_Defaults_over_Time.png  used on input line 267.
+Package pdftex.def Info: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01_Defaults_over_Time.png  used on input line 266.
 (pdftex.def)             Requested size: 450.43253pt x 219.88144pt.
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
-<C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/02_Top_Sectors.png, id=114, 904.5795pt x 441.5697pt>
+<C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01b_Defaults_over_Time_Tewari.png, id=138, 680.5425pt x 342.27875pt>
+File: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01b_Defaults_over_Time_Tewari.png Graphic file (type png)
+<use C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01b_Defaults_over_Time_Tewari.png>
+Package pdftex.def Info: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01b_Defaults_over_Time_Tewari.png  used on input line 276.
+(pdftex.def)             Requested size: 450.43253pt x 226.54706pt.
+
+LaTeX Warning: `!h' float specifier changed to `!ht'.
+
+<C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/02_Top_Sectors.png, id=145, 904.5795pt x 441.5697pt>
 File: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/02_Top_Sectors.png Graphic file (type png)
 <use C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/02_Top_Sectors.png>
-Package pdftex.def Info: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/02_Top_Sectors.png  used on input line 280.
+Package pdftex.def Info: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/02_Top_Sectors.png  used on input line 289.
 (pdftex.def)             Requested size: 450.43253pt x 219.88144pt.
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 288--289
+Underfull \hbox (badness 10000) in paragraph at lines 297--298
 
  []
 
-<C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03_Sample_of_Implosions.png, id=116, 904.5795pt x 441.5697pt>
+<C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03_Sample_of_Implosions.png, id=147, 904.5795pt x 441.5697pt>
 File: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03_Sample_of_Implosions.png Graphic file (type png)
 <use C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03_Sample_of_Implosions.png>
-Package pdftex.def Info: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03_Sample_of_Implosions.png  used on input line 301.
+Package pdftex.def Info: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03_Sample_of_Implosions.png  used on input line 308.
 (pdftex.def)             Requested size: 450.43253pt x 219.88144pt.
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
+<C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03b_Sample_of_Implosions_Tewari.png, id=148, 749.80125pt x 347.79938pt>
+File: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03b_Sample_of_Implosions_Tewari.png Graphic file (type png)
+<use C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03b_Sample_of_Implosions_Tewari.png>
+Package pdftex.def Info: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03b_Sample_of_Implosions_Tewari.png  used on input line 318.
+(pdftex.def)             Requested size: 450.43253pt x 208.93596pt.
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+<C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/04_Failure_Rate_Over_Time.png, id=154, 904.5795pt x 441.5697pt>
+File: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/04_Failure_Rate_Over_Time.png Graphic file (type png)
+<use C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/04_Failure_Rate_Over_Time.png>
+Package pdftex.def Info: C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/04_Failure_Rate_Over_Time.png  used on input line 348.
+(pdftex.def)             Requested size: 450.43253pt x 219.88144pt.
 
 
 [3
 
 {c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc}{c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc}{c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}]
 
-[4 <c:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01_Defaults_over_Time.png> <c:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/02_Top_Sectors.png>]
+LaTeX Warning: `h' float specifier changed to `ht'.
 
-[5 <c:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03_Sample_of_Implosions.png>]
+
+Underfull \hbox (badness 10000) in paragraph at lines 355--356
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 357--360
+
+ []
+
+
+
+[4 <c:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01_Defaults_over_Time.png> <c:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/01b_Defaults_over_Time_Tewari.png>]
+
+[5 <c:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/02_Top_Sectors.png> <c:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03_Sample_of_Implosions.png>]
+
+[6 <c:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/03b_Sample_of_Implosions_Tewari.png> <c:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/04_Failure_Rate_Over_Time.png>]
 Chapter 3.
 
+Underfull \hbox (badness 10000) in paragraph at lines 403--404
 
-[6
+ []
+
+
+
+[7
 
 ]
+Underfull \hbox (badness 10000) in paragraph at lines 405--406
 
-Package natbib Warning: Citation `Tewari2024' on page 7 undefined on input line 378.
-
-
-Package natbib Warning: There were undefined citations.
+ []
 
 
 
-[7{c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc}] (./Methodology_LaTeX.aux)
+[8{c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc}]
+Chapter 4.
+
+
+[9
+
+] (./Methodology_LaTeX.bbl
+
+[10])
+
+[11
+
+] (./Methodology_LaTeX.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2024-12-25>
  ***********
+
+LaTeX Warning: There were multiply-defined labels.
+
 Package rerunfilecheck Info: File `Methodology_LaTeX.out' has not changed.
-(rerunfilecheck)             Checksum: 105FD34150E907E6CAA35550E42668F3;4090.
+(rerunfilecheck)             Checksum: C4176DBEB5342D2B99E901C73CF3553C;5726.
  ) 
 Here is how much of TeX's memory you used:
- 11001 strings out of 475177
- 174347 string characters out of 5763703
- 582814 words of memory out of 5000000
- 33786 multiletter control sequences out of 15000+600000
- 625726 words of font info for 67 fonts, out of 8000000 for 9000
+ 11062 strings out of 475177
+ 177328 string characters out of 5763703
+ 582912 words of memory out of 5000000
+ 33823 multiletter control sequences out of 15000+600000
+ 619920 words of font info for 65 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 75i,9n,79p,1412b,575s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,9n,79p,582b,575s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx12.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmcsc10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmex10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmmi10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmmi7.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr12.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr7.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmri10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmsy10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmtt10.pfb>
-Output written on Methodology_LaTeX.pdf (8 pages, 916867 bytes).
+Output written on Methodology_LaTeX.pdf (12 pages, 1461653 bytes).
 PDF statistics:
- 229 PDF objects out of 1000 (max. 8388607)
- 187 compressed objects within 2 object streams
- 41 named destinations out of 1000 (max. 500000)
- 176 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 310 PDF objects out of 1000 (max. 8388607)
+ 254 compressed objects within 3 object streams
+ 65 named destinations out of 1000 (max. 500000)
+ 239 words of extra memory for PDF output out of 10000 (max. 10000000)
 

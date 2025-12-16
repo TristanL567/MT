@@ -18,7 +18,8 @@ Path <- file.path(here::here("")) ## You need to install the package first incas
 
 packages <- c("here", "xts", "dplyr", "tidyr",
               "RPostgres", "tidyverse", "tidyfinance", "scales",
-              "RSQLite", "dbplyr", "kableExtra", "forcats"
+              "RSQLite", "dbplyr", "kableExtra", "forcats",
+              "patchwork"
 )
 
 for(i in 1:length(packages)){
@@ -466,6 +467,117 @@ Path <- file.path(DescriptiveStats_Charts_Directory, "03_Sample_of_Implosions.pn
 ggsave(
   filename = Path,
   plot = p_grid,
+  width = width,
+  height = heigth,
+  units = "px",
+  dpi = 300,
+  limitsize = FALSE
+)
+
+##===================================##
+## Imbalance of the dataset.
+##===================================##
+
+#=========================================================================#
+# 1. Event-Level Imbalance (The "Company Count")
+#=========================================================================#
+
+# A. Identify the total unique companies in the dataset
+total_companies <- n_distinct(ml_panel$permno)
+
+# B. Identify distinct Failure Events
+# We look for unique combinations of Permno + Implosion Date.
+# If a company fails in 1990 and again in 2000, this counts them twice (as requested).
+# Note: Your current Step 5 uses `min(date)`, so currently only 1 failure per firm exists.
+failure_events <- ml_panel |>
+  filter(!is.na(implosion_date)) |>
+  distinct(permno, implosion_date)
+
+n_failures <- nrow(failure_events)
+
+# C. Print the "True" Economic Imbalance
+cat("--- Event-Level Imbalance ---\n")
+cat("Total Unique Companies:  ", comma(total_companies), "\n")
+cat("Total Failure Events:    ", comma(n_failures), "\n")
+cat("Percent of Universe Died:", percent(n_failures / total_companies, accuracy = 0.01), "\n")
+
+
+#=========================================================================#
+# 2. Failure Rate Per Period (Correctly Normalized)
+#=========================================================================#
+
+# To get a "Rate per Year", we need:
+# Numerator:   Number of companies that died in Year X
+# Denominator: Number of companies that were "alive" (trading) in Year X
+
+# A. Calculate the Denominator (Active Universe per Year)
+active_counts <- ml_panel |>
+  mutate(year = year(date)) |>
+  group_by(year) |>
+  summarise(n_active_firms = n_distinct(permno)) |>
+  ungroup()
+
+# B. Calculate the Numerator (Failures per Year)
+# We use the 'failure_events' dataframe we created above
+failure_counts <- failure_events |>
+  mutate(year = year(implosion_date)) |>
+  count(year, name = "n_failures")
+
+# C. Merge and Calculate Rate
+annual_stats <- active_counts |>
+  left_join(failure_counts, by = "year") |>
+  mutate(
+    n_failures = replace_na(n_failures, 0), # Fill years with 0 failures
+    failure_rate = n_failures / n_active_firms
+  ) |>
+  filter(year < 2024) # Optional: Cut off incomplete current year
+
+#=========================================================================#
+# 3. Visualization: The "Event" Dashboard
+#=========================================================================#
+
+# Color Palette
+col_fail <- "#c0392b" # Red
+col_safe <- "#2c3e50" # Blue
+
+plot <- ggplot(annual_stats, aes(x = year)) +
+  # Layer 1: The Active Universe (Background Bars)
+  geom_col(aes(y = n_active_firms, fill = "Active Universe"), alpha = 0.3) +
+  
+  # Layer 2: The Failure Rate (Line Chart on Secondary Axis)
+  # We scale the rate up by a factor (e.g., 20000) to make it visible on the same chart,
+  # then reverse that scaling in the axis label.
+  geom_line(aes(y = failure_rate * 20000, color = "Failure Rate"), size = 1.2) +
+  geom_point(aes(y = failure_rate * 20000, color = "Failure Rate"), size = 2) +
+  
+  # Dual Axis Setup
+  scale_y_continuous(
+    name = "Number of Active Companies (Bars)",
+    labels = comma,
+    sec.axis = sec_axis(~ . / 20000, name = "Failure Rate (Red Line)", labels = percent)
+  ) +
+  
+  scale_fill_manual(values = c("Active Universe" = col_safe)) +
+  scale_color_manual(values = c("Failure Rate" = col_fail)) +
+  
+  labs(
+    title = "",
+    subtitle = "",
+    x = "Year",
+    fill = "", color = ""
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = col_fail, face = "bold"),
+    axis.text.y.right = element_text(color = col_fail)
+  )
+
+## Save the plot.
+Path <- file.path(DescriptiveStats_Charts_Directory, "04_Failure_Rate_Over_Time.png")
+ggsave(
+  filename = Path,
+  plot = plot,
   width = width,
   height = heigth,
   units = "px",

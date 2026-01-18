@@ -1,0 +1,147 @@
+%==== KNITR ===================================================================%
+
+<<setup, include=FALSE>>=
+library(knitr)
+
+Path <- file.path(here::here("")) ## You need to install the package first incase you do not have it.
+Directory <- file.path(Path, "01_Code/Presentation")
+Directory_LaTeX <- file.path(Directory, "ProposalPresentation_TristanLeiter_h11815352.Rnw")
+setwd(Directory)
+
+# knit2pdf(Directory_LaTeX)
+
+###
+# opts_chunk$set(fig.align='center', size='footnotesize', 
+#                message=FALSE, warning=FALSE, echo=TRUE)
+
+@
+
+%==== START ===================================================================%
+
+\documentclass{beamer}
+
+% --- THEME SETUP ---
+% I replaced the custom 'ldv' theme with 'Madrid' so this compiles immediately.
+% If you have the ldv files locally, uncomment the line below and remove 'Madrid'.
+% \usetheme{ldv} 
+\usetheme{Madrid} 
+\usecolortheme{beaver} % A nice color variation
+
+% --- PACKAGES ---
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs} % For professional tables
+\usepackage{hyperref}
+
+% --- METADATA ---
+\title[Thesis Proposal]{The Agony and the...}
+\subtitle{Master Thesis Proposal}
+\author{Tristan Leiter}
+\institute[WU]{Vienna University of Business and Economics}
+\date{\today}
+
+%==== Beginning of the document ===============================================%
+
+\begin{document}
+
+%==== Title Page ==============================================================%
+
+% 1. Title Page
+\begin{frame}
+  \titlepage
+\end{frame}
+
+% 2. Outline
+\begin{frame}{Agenda}
+  \tableofcontents
+\end{frame}
+
+%==== 01 - Problem Statement ==================================================%
+
+\section{Problem Statement}
+
+\begin{frame}{Motivation}
+  \begin{itemize}
+    \item \textbf{Context:} Modern distributed systems generate massive logs.
+    \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
+    \item \textbf{Goal:} Develop a hybrid deep-learning model for real-time detection.
+  \end{itemize}
+  
+  \vspace{1em}
+  
+  \begin{alertblock}{Research Gap}
+    Existing solutions struggle with high-dimensional, unlabeled data streams.
+  \end{alertblock}
+\end{frame}
+
+%==== 02 - Methodology ========================================================%
+
+\section{Methodology}
+
+\begin{frame}{Proposed Mathematical Model}
+  We assume the state transition follows a Markov process. The posterior probability is updated as follows:
+  
+  \begin{equation}
+    p(\mathbf{x}_{k}|\mathbf{Z}_{k}) = \frac{p(\mathbf{z}_{k}|\mathbf{x}_{k})p(\mathbf{x}_{k}|\mathbf{Z}_{k-1})}{\int \! p(\mathbf{z}_{k}|\mathbf{x}_{k})p(\mathbf{x}_{k}|\mathbf{Z}_{k-1})\,d\mathbf{x}_{k}}
+  \end{equation}
+  
+  Where:
+  \begin{itemize}
+    \item $\mathbf{x}_{k}$ is the system state at time $k$
+    \item $\mathbf{Z}_{k}$ is the observation history
+  \end{itemize}
+\end{frame}
+
+%==== 03 - Data ===============================================================%
+
+\section{Preliminary Data}
+
+% [fragile] is MANDATORY when using R code blocks in Beamer
+\begin{frame}[fragile]{Preliminary Data Analysis (R Integration)}
+  Using R directly in slides ensures plots are always up-to-date with your data.
+  
+  <<summary_plot, fig.height=3.5>>=
+  # We can generate plots dynamically
+  par(mar=c(4,4,1,1))
+  plot(iris$Sepal.Length, iris$Petal.Length, 
+       col=iris$Species, pch=19,
+       main="Cluster Separation Feasibility")
+  legend("topleft", legend=levels(iris$Species), col=1:3, pch=19, cex=0.8)
+  @
+\end{frame}
+
+% --- SECTION 4: TIMELINE ---
+\section{Plan}
+
+\begin{frame}{Project Timeline}
+  \begin{table}[]
+    \centering
+    \begin{tabular}{ll}
+      \toprule
+      \textbf{Phase} & \textbf{Deadline} \\
+      \midrule
+      Literature Review & Month 1 \\
+      Data Collection & Month 2 \\
+      Implementation (Prototype) & Month 3-4 \\
+      Evaluation \& Tuning & Month 5 \\
+      Writing Thesis & Month 6 \\
+      \bottomrule
+    \end{tabular}
+    \caption{Estimated milestones for the 6-month period.}
+  \end{table}
+\end{frame}
+
+%==== 04 - Conclusion =========================================================%
+
+\begin{frame}{Next Steps}
+  \centering
+  \Large \textbf{Thank you for your attention.}
+  
+  \vspace{1cm}
+  
+  \normalsize
+  Questions?
+\end{frame}
+
+\end{document}

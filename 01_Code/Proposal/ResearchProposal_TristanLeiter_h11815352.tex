@@ -79,10 +79,10 @@
 \usepackage{geometry}
 \usepackage{xcolor}
 
-% Required for Table.
-
-
-%%
+%% Grafik-Pfad.
+\graphicspath{
+    {C:/Users/TristanLeiter/Documents/Privat/MT/04_Charts/DescriptiveStatistics/}
+}
 
 % \title{Master Thesis - Research Proposal}
 % \author{Tristan Leiter}
@@ -209,7 +209,9 @@ This thesis proposes bridging the gap between distress prediction and active ind
 
 \begin{enumerate}
     \item \textbf{Model Fitting and Selection:} \\
-    The research will model the probability of market-risk loss, specifically the CSI event, by adopting the definition established by \citet{Tewari2024}. The methodology extends current literature by moving beyond static snapshots of financial health. In addition to advanced ensemble methods (e.g., XGBoost, CatBoost) capable of handling non-linear interactions, this approach incorporates Deep Learning architectures, specifically Long Short-Term Memory (LSTM) networks. This extension allows the model to capture \textit{latent temporal dependencies} and the rate of change in fundamental deterioration, aiming to reduce the detection lag associated with traditional models.
+    The research will model the probability of market-risk loss, specifically the CSI event, by adopting the definition established by \citet{Tewari2024}. The methodology extends current literature by moving beyond static snapshots of financial health. In addition to advanced ensemble methods (e.g., XGBoost, CatBoost) capable of handling non-linear interactions, this approach incorporates autoencoders to decode the noisy financial features.
+    
+% This extension allows the model to capture \textit{latent temporal dependencies} and the rate of change in fundamental deterioration, aiming to reduce the detection lag associated with traditional models.
 
     \item \textbf{Index Construction:} \\
     Based on the model outputs, a "Crash-Filtered" equity index will be constructed. This process involves a systematic re-weighting or exclusion mechanism that penalizes index constituents exhibiting a likelihood of implosion exceeding a calibrated threshold. The primary objective is to penalize identified "Agony" candidates (permanent capital loss or capital loss exceeding a threshold) while retaining the "Ecstasy" winners (usually featuring high volatility and returns). This distinction is critical to isolating the alpha generated purely by tail-risk mitigation, rather than by a generic low-beta factor tilt.
@@ -232,22 +234,113 @@ Based on the identified problem that standard metrics fail to distinguish betwee
 
 \section{Main Research Question}
 
-\textit{Does a ML-risk filtered equity index, constructed by excluding stocks with a high implied probability of catastrophic implosion, generate statistically significant superior risk-adjusted returns compared to the market-weighted benchmark and traditional volatility-filtered indices?}
+\textit{To what extent does a 'Crash-Filtered' equity index, constructed using a hybrid of Autoencoder-based feature extraction and Gradient Boosting Ensembles, generate superior risk-adjusted returns compared to traditional volatility-weighted strategies?}
 
-\subsection{Sub-Question 1: Predictive Superiority}
+\subsection{Sub-Question 1: Autoencoder}
 
-\textit{Can Machine Learning models (e.g., CatBoost, XGBoost or Neural Networks) calibrated to the definition of "Catastrophic Implosion" outperform traditional distress models (e.g., Altman Z-Score) in distinguishing between permanent capital loss and temporary drawdown?} \\
+Standard ratios (like P/E) are too noisy, but an Autoencoder can find the "hidden" structure of a failing firm.\\
 
-This tests the hypothesis that avoiding \textit{implosions} (permanent loss) provides a distinct risk profile compared to avoiding \textit{volatility} (temporary noise), potentially allowing the investor to retain exposure to high-growth, high-volatility winners that do not implode.
+\textit{Does the integration of latent features derived from Autoencoders significantly improve the predictive accuracy (AUC-ROC) of Gradient Boosting models compared to using raw financial ratios alone?} \\
 
-\subsection{Sub-Question 2: Portfolio Distinction}
+\textit{Hypothesis:} Autoencoders will successfully denoise volatile market indicators, allowing the Ensemble model to identify "structural" distress earlier than models relying on raw accounting inputs.
 
-\textit{Does the "Implosion-Filtered" portfolio exhibit lower risk characteristics (measured by maximum drawdown and expected shortfall) than standard risk-controlling models (e.g., low volatility, low beta)?} \\ 
+\subsection{Sub-Question 2: The "False Positive" Advantage of Ensemble Methods}
 
-%==== Chapter 3: Data =========================================================%
+Showing that decision trees (handling the non-linearities) are better than the linear Altman Z-Score at saving the "Ecstasy" stocks.
 
+\textit{Do Ensemble methods (e.g., CatBoost, XGBoost) exhibit a statistically lower Type I error rate (False Positives) than linear discriminant models (Altman Z-Score) when classifying high-volatility growth stocks?} \\ 
 
+\textit{Hypothesis:} Ensemble models will distinguish between 'good' volatility (growth) and 'bad' volatility (implosion) more effectively than linear models, thereby reducing the exclusion of high-performing winners.
 
+\subsection{Sub-Question 3: The "Tail-Risk" Advantage}
+
+\textit{Can a portfolio filtered by this hybrid ML-probability score deliver superior downside protection (lower Maximum Drawdown) than a Minimum Volatility benchmark, without sacrificing the upside participation of a market-cap weighted index?} \\ 
+
+\textit{Hypothesis:} The Hybrid-Filtered Index will decouple downside risk from upside potential, generating alpha specifically through the avoidance of Catastrophic Stock Implosions.
+
+%==== Chapter 3: Research Design ==============================================%
+
+% \chapter{Research Design}
+% \label{ch:research_design}
+% 
+% To answer the research question posed in Chapter 2, this thesis employs a quantitative, three-stage methodology. The approach transitions from unsupervised feature extraction to supervised probabilistic modeling, culminating in the construction of a systematic investment strategy. The methodology is designed to test whether machine learning can effectively separate "recoverable volatility" from "permanent capital loss" (Cembalest, 2014; Tewari et al., 2024).
+% 
+% \section{Data and Sample Selection}
+% The research universe consists of the constituents of the \textbf{Russell 3000} index, representing approximately 98\% of the investable U.S. equity market. This broad universe is essential to capture both large-cap stability and the "long tail" of small-cap volatility where implosions are most frequent.
+% 
+% \subsection{Data Sources}
+% \begin{itemize}
+%     \item \textbf{Market Data:} Daily adjusted closing prices and trading volume (Source: CRSP/Bloomberg).
+%     \item \textbf{Fundamental Data:} Quarterly accounting ratios including leverage, liquidity, and profitability metrics (Source: Compustat).
+%     \item \textbf{Macroeconomic Indicators:} VIX index, interest rates, and credit spreads to control for systematic market stress.
+% \end{itemize}
+% 
+% \subsection{Defining the Target Variable: Catastrophic Stock Implosion (CSI)}
+% Following the definition established by Tewari et al. (2024)[cite_start], a stock is classified as experiencing a Catastrophic Stock Implosion (CSI) if it suffers a drawdown of $D \geq 70\%$ from its trailing peak without recovering to at least 50\% of the peak value within a subsequent 12-month period[cite: 15, 16].
+% 
+% Let $P_t$ be the price at time $t$ and $P_{peak}$ be the rolling 2-year maximum price. The binary target variable $y_{i,t}$ for stock $i$ is defined as:
+% \begin{equation}
+%     y_{i,t} =
+%     \begin{cases}
+%     1 & \text{if } \frac{P_t - P_{peak}}{P_{peak}} \leq -0.70 \text{ and No Recovery} \\
+%     0 & \text{otherwise}
+%     \end{cases}
+% \end{equation}
+% 
+% \section{Methodology Pipeline}
+% The research design follows a sequential "Hybrid" pipeline:
+% 
+% \begin{enumerate}
+%     \item \textbf{Unsupervised Phase:} An Autoencoder compresses high-dimensional, noisy financial data into latent features.
+%     \item \textbf{Supervised Phase:} Gradient Boosting Ensembles (XGBoost/CatBoost) predict the probability of CSI using these latent features.
+%     \item \textbf{Portfolio Phase:} A "Crash-Filtered" index is constructed by removing stocks with a predicted CSI probability above a dynamic threshold.
+% \end{enumerate}
+% 
+% \section{Stage 1: Feature Extraction via Autoencoders}
+% Financial ratios (e.g., P/E, Debt/Equity) are often noisy and exhibit high multicollinearity. To address this, an undercomplete \textbf{Autoencoder} (a type of Neural Network) is employed to learn a compressed representation of the input space.
+% 
+% The Autoencoder maps the input vector $x$ to a latent representation $z$ (encoding) and attempts to reconstruct the input $\hat{x}$ (decoding). The objective is to minimize the reconstruction error:
+% \begin{equation}
+%     \mathcal{L}(x, \hat{x}) = || x - \hat{x} ||^2
+% \end{equation}
+% The resulting latent vector $z$ serves as a "denoised" feature set for the subsequent classification model, aiming to capture structural distress signals that linear ratios might miss.
+% 
+% \section{Stage 2: Predictive Modeling (Ensemble Methods)}
+% The core predictive engine utilizes \textbf{Gradient Boosted Decision Trees (GBDT)}, specifically \textbf{XGBoost} and \textbf{CatBoost}. These models are selected for their ability to:
+% \begin{itemize}
+%     [cite_start]\item Handle non-linear interactions between variables[cite: 40].
+%     \item Process missing data inherently.
+%     [cite_start]\item Minimize the False Positive rate, which is critical to retaining high-volatility "winners"[cite: 37].
+% \end{itemize}
+% 
+% \subsection{Benchmarking Prediction}
+% To validate the hypothesis that ML outperforms traditional metrics, the Ensemble model's performance will be compared against:
+% \begin{itemize}
+%     [cite_start]\item \textbf{Baseline 1:} Altman Z-Score (Linear Discriminant Analysis)[cite: 26].
+%     \item \textbf{Baseline 2:} Logistic Regression.
+% \end{itemize}
+% Evaluation metrics will focus on the \textbf{Area Under the Precision-Recall Curve (PR-AUC)} due to the high class imbalance of implosion events.
+% 
+% \section{Stage 3: Index Construction and Backtesting}
+% The final stage involves constructing the "Crash-Filtered" index. The portfolio is rebalanced monthly.
+% 
+% \subsection{The Filtering Mechanism}
+% For each rebalancing period $t$:
+% \begin{enumerate}
+%     \item Calculate the probability of implosion $\hat{p}_{i,t}$ for all constituents using the trained Ensemble model.
+%     \item Exclude any stock where $\hat{p}_{i,t} > \theta$, where $\theta$ is a calibrated risk threshold (e.g., 50\%).
+%     \item Re-weight the remaining constituents according to market capitalization.
+% \end{enumerate}
+% 
+% \subsection{Performance Evaluation}
+% [cite_start]The strategy is backtested using a rolling-forward (walk-forward) cross-validation framework to prevent data leakage[cite: 59]. The "Crash-Filtered" Index is benchmarked against:
+% \begin{itemize}
+%     \item \textbf{The Unfiltered Benchmark:} Russell 3000 (Market-Cap Weighted).
+%     [cite_start]\item \textbf{The Volatility Benchmark:} MSCI USA Minimum Volatility Index (to test for distinctness from low-beta factors)[cite: 62].
+% \end{itemize}
+% 
+% Key performance indicators include the \textbf{Sharpe Ratio}, \textbf{Calmar Ratio}, and \textbf{Maximum Drawdown}.
+% 
 
 
 

@@ -1,6 +1,6 @@
 %==== KNITR ===================================================================%
 
-<<setup, include=FALSE>>=
+<<echo=FALSE, eval=FALSE>>=
 library(knitr)
 
 Path <- file.path(here::here("")) ## You need to install the package first incase you do not have it.
@@ -8,7 +8,7 @@ Directory <- file.path(Path, "01_Code/Presentation")
 Directory_LaTeX <- file.path(Directory, "ProposalPresentation_TristanLeiter_h11815352.Rnw")
 setwd(Directory)
 
-# knit2pdf(Directory_LaTeX)
+knit2pdf(Directory_LaTeX)
 
 ###
 # opts_chunk$set(fig.align='center', size='footnotesize', 
@@ -57,11 +57,10 @@ setwd(Directory)
   \tableofcontents
 \end{frame}
 
-%==== 01 - Problem Statement ==================================================%
+%==== 01 - Introduction =======================================================%
 
-\section{Problem Statement}
-
-\begin{frame}{Motivation}
+\section{Introduction}
+\begin{frame}{Introduction}
   \begin{itemize}
     \item \textbf{Context:} Modern distributed systems generate massive logs.
     \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
@@ -75,7 +74,82 @@ setwd(Directory)
   \end{alertblock}
 \end{frame}
 
-%==== 02 - Methodology ========================================================%
+
+%==== 02 - Research Question ==================================================%
+
+\section{Research Question}
+\begin{frame}{Research Question}
+  \begin{itemize}
+    \item \textbf{Context:} Modern distributed systems generate massive logs.
+    \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
+    \item \textbf{Goal:} Develop a hybrid deep-learning model for real-time detection.
+  \end{itemize}
+  
+  \vspace{1em}
+  
+  \begin{alertblock}{Research Gap}
+    Existing solutions struggle with high-dimensional, unlabeled data streams.
+  \end{alertblock}
+\end{frame}
+
+%==== 03 - Literature Review ==================================================%
+
+\section{Literature Review}
+\begin{frame}{Literature Review}
+  \begin{itemize}
+    \item \textbf{Context:} Modern distributed systems generate massive logs.
+    \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
+    \item \textbf{Goal:} Develop a hybrid deep-learning model for real-time detection.
+  \end{itemize}
+  
+  \vspace{1em}
+  
+  \begin{alertblock}{Research Gap}
+    Existing solutions struggle with high-dimensional, unlabeled data streams.
+  \end{alertblock}
+\end{frame}
+
+%==== 04 - Research Design ====================================================%
+
+\section{Research Design}
+\begin{frame}{Research Design}
+  \begin{itemize}
+    \item \textbf{Context:} Modern distributed systems generate massive logs.
+    \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
+    \item \textbf{Goal:} Develop a hybrid deep-learning model for real-time detection.
+  \end{itemize}
+  
+  \vspace{1em}
+  
+  \begin{alertblock}{Research Gap}
+    Existing solutions struggle with high-dimensional, unlabeled data streams.
+  \end{alertblock}
+\end{frame}
+
+
+
+
+
+
+%==== 05 - Expected Contribution ==============================================%
+
+\section{Expected Contribution}
+\begin{frame}{Expected Contribution}
+  \begin{itemize}
+    \item \textbf{Context:} Modern distributed systems generate massive logs.
+    \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
+    \item \textbf{Goal:} Develop a hybrid deep-learning model for real-time detection.
+  \end{itemize}
+  
+  \vspace{1em}
+  
+  \begin{alertblock}{Research Gap}
+    Existing solutions struggle with high-dimensional, unlabeled data streams.
+  \end{alertblock}
+\end{frame}
+
+
+%==== 00 - OTHER ==============================================================%
 
 \section{Methodology}
 
@@ -93,7 +167,7 @@ setwd(Directory)
   \end{itemize}
 \end{frame}
 
-%==== 03 - Data ===============================================================%
+%==== 00 - OTHER ==============================================================%
 
 \section{Preliminary Data}
 
@@ -111,7 +185,7 @@ setwd(Directory)
   @
 \end{frame}
 
-% --- SECTION 4: TIMELINE ---
+%==== 00 - OTHER ==============================================================%
 \section{Plan}
 
 \begin{frame}{Project Timeline}
@@ -132,7 +206,7 @@ setwd(Directory)
   \end{table}
 \end{frame}
 
-%==== 04 - Conclusion =========================================================%
+%==== 00 - OTHER ==============================================================%
 
 \begin{frame}{Next Steps}
   \centering

@@ -10,7 +10,7 @@
 silent=F
 .libPaths()
 
-Path <- file.path(here::here("")) ## You need to install the package first incase you do not have it.
+Directory <- file.path(here::here("")) ## You need to install the package first incase you do not have it.
 
 #==== 1A - Libraries ==========================================================#
 
@@ -18,7 +18,7 @@ Path <- file.path(here::here("")) ## You need to install the package first incas
 
 packages <- c("here", "xts", "dplyr", "tidyr",
               "RPostgres", "tidyverse", "tidyfinance", "scales",
-              "RSQLite", "dbplyr"
+              "RSQLite", "dbplyr", "lubridate"
 )
 
 for(i in 1:length(packages)){
@@ -48,10 +48,10 @@ sourceFunctions <- function (functionDirectory)  {
 #==== 1C - Parameters =========================================================#
 
 ## Directories.
-Data_Directory <- file.path(Path, "02_Data")
+Data_Directory <- file.path(Directory, "02_Data")
 Data_CRSP_Directory <- file.path(Data_Directory, "CRSP")
 
-Functions_Directory <- file.path(Path, "01_Code/Data/Subfunctions")
+Functions_Directory <- file.path(Directory, "01_Code/Data/Subfunctions")
 
 ## Load all code files in the functions directory.
 sourceFunctions(Functions_Directory)
@@ -60,9 +60,16 @@ sourceFunctions(Functions_Directory)
 start_date <- ymd("2023-01-01")
 end_date <- ymd("2024-12-31")
 
+## Saved objects.
+
+# Data_Stock_Masterlist.rds - Masterlist of all firms after filtering.
+# Data_Monthly - Contains all data about the firms in the masterlist.
+# Data_Failed_Companies - Contains the tibble with the failed company details.
+# Data_y - Final tibble of firms with the target and if they are in a zombie state (target is then NA).
+
 #==== 1D - Setup WRDS =========================================================#
 
-Path_Environment <- file.path(Path, ".Renviron")
+Path_Environment <- file.path(Directory, ".Renviron")
 readRenviron(Path_Environment)
 Sys.getenv("WRDS_USER")
 # set_wrds_credentials()
@@ -121,7 +128,7 @@ final_attributes <- stk_info_db |>
   )
 
 # 4. Merge and Finalize
-stock_master_list <- lifetime_stats |>
+Data_Stock_Masterlist_Raw <- lifetime_stats |>
   inner_join(final_attributes, by = "permno") |>
   collect() |> # Execute SQL and pull to R
   mutate(
@@ -141,16 +148,19 @@ stock_master_list <- lifetime_stats |>
   ) |>
   arrange(permno)
 
+Path <- file.path(Data_CRSP_Directory, "Data_Stock_Masterlist_Raw.rds")
+saveRDS(Data_Stock_Masterlist_Raw, file = Path)
+
 # 5. Preview the Master List
-glimpse(stock_master_list)
+glimpse(Data_Stock_Masterlist_Raw)
 
 ## Dimensions.
 
-dim(stock_master_list)
-unique(stock_master_list$securitytype)
+dim(Data_Stock_Masterlist_Raw)
+unique(Data_Stock_Masterlist_Raw$securitytype)
 
 ## 6A. Filter for EQUITY (and NA) only.
-stock_master_list_filtered <- stock_master_list |>
+stock_master_list_filtered <- Data_Stock_Masterlist_Raw |>
   filter(
     !securitytype %in% c("FUND"),
     removal_date > "1966-01-01",
@@ -165,13 +175,18 @@ stock_master_list_filtered <- stock_master_list |>
 
 ## 6B. filter for companies with two share classes, but same company characteristics.
 
-stock_master_list_filtered <- stock_master_list_filtered |>
+Data_Stock_Masterlist <- stock_master_list_filtered |>
   group_by(issuernm) |>
   arrange(desc(lifetime_years), permno) |>
   slice(1) |>
   ungroup()
 
-summary(stock_master_list_filtered)
+summary(Data_Stock_Masterlist)
+
+## Save to the data directory.
+
+Path <- file.path(Data_CRSP_Directory, "Data_Stock_Masterlist.rds")
+saveRDS(Data_Stock_Masterlist, file = Path)
 
 ##=========================================================================#
 ## 3. Retrieve the constiuent characteristics.
@@ -179,7 +194,7 @@ summary(stock_master_list_filtered)
 
 # Filter for the "Investable Universe"
 # We do this first to avoid pulling data for dead penny stocks we won't trade.
-universe_subset <- stock_master_list_filtered |>
+universe_subset <- Data_Stock_Masterlist |>
   select(permno, listing_date, removal_date)
 
 ##=========================================================================#
@@ -196,23 +211,27 @@ raw_prices <- msf_db |>
   collect()
 
 # 3. Merge & Filter (Local R Side)
-crsp_monthly <- raw_prices |>
+Data_Monthly <- raw_prices |>
   inner_join(universe_subset, by = "permno") |>
   filter(mthcaldt >= "1960-01-01") |>
   filter(mthcaldt >= listing_date & mthcaldt <= removal_date) |>
     mutate(
     date = ymd(mthcaldt),
-    prc = abs(mthprc), 
-    mthret = if_else(is.na(mthret), 0, mthret),
+    price = abs(mthprc), 
+    ret = if_else(is.na(mthret), 0, mthret),
     log_ret = if_else(1 + mthret > 0, log(1 + mthret), NA_real_),
-    mkt_cap = prc * shrout * 1000 
+    mkt_cap = price * shrout * 1000 
   ) |>
-  select(permno, date, ret = mthret, log_ret, prc, mkt_cap) |>
+  select(permno, date, ret = mthret, log_ret, price, mkt_cap) |>
   arrange(permno, date) |>
-  filter(!is.na(prc))
+  filter(!is.na(price))
 
 # Preview
-glimpse(crsp_monthly)
+# glimpse(Data_Monthly)
+# length(unique(Data_Monthly$permno))
+
+Path <- file.path(Data_CRSP_Directory, "Data_Monthly.rds")
+saveRDS(Data_Monthly, file = Path)
 
 ##=========================================================================#
 ## 5. Check for catastrophic implosions (same as the Tewari et al. Methodology)
@@ -224,22 +243,22 @@ PARAM_M <- -0.2   # Recovery ceiling (Price cannot recover above -20% of Peak)
 PARAM_T <- 18     # Zombie Period: 78 weeks approx 18 months
 
 # 2. Calculate Peak and Drawdown
-monthly_signals <- crsp_monthly |>
+Data_Signal_Monthly <- Data_Monthly |>
   group_by(permno) |>
   arrange(date) |>
   mutate(
-    running_max_price = cummax(prc),
-    drawdown = (prc / running_max_price) - 1,
+    running_max_price = cummax(price),
+    drawdown = (price / running_max_price) - 1,
     is_crash_zone = drawdown <= PARAM_C
   ) |>
   ungroup()
 
 # 3. Verify the "Zombie" Condition (Look-Ahead)
-implosion_universe <- monthly_signals |>
+implosion_universe <- Data_Signal_Monthly |>
   group_by(permno) |>
   mutate(
     recovery_ceiling = running_max_price * (1 + PARAM_M),
-      future_max_price = zoo::rollapply(prc, width = PARAM_T, 
+      future_max_price = zoo::rollapply(price, width = PARAM_T, 
                                       FUN = max, 
                                       align = "left", 
                                       fill = NA)
@@ -256,19 +275,22 @@ implosion_universe <- monthly_signals |>
 # 4. Final List of Failed Companies
 # A stock might flag as "failed" for 50 months in a row. 
 # We only want the FIRST date it happened (the specific moment of failure).
-failed_companies <- implosion_universe |>
+Data_Failed_Companies <- implosion_universe |>
   group_by(permno) |>
   summarise(
     implosion_date = min(date),
     peak_price = first(running_max_price[date == min(date)]),
-    crash_price = first(prc[date == min(date)]),
+    crash_price = first(price[date == min(date)]),
     lifetime_drawdown = first(drawdown[date == min(date)])
   ) |>
   ungroup()
 
 # Preview results
-print(paste("Identified", nrow(failed_companies), "failed companies."))
-head(failed_companies)
+print(paste("Identified", nrow(Data_Failed_Companies), "failed companies."))
+head(Data_Failed_Companies)
+
+Path <- file.path(Data_CRSP_Directory, "Data_Failed_Companies.rds")
+saveRDS(Data_Failed_Companies, file = Path)
 
 ##=========================================================================#
 ## 6. Setup the data in the long-format.
@@ -280,8 +302,8 @@ ZOMBIE_WINDOW      <- 18  # The "dead" period defined in your appendix (78 weeks
 
 # 2. Join Monthly Data with Failure Dates
 # We keep all historical months for all stocks (failed or not)
-model_universe <- crsp_monthly |>
-  left_join(failed_companies |> select(permno, implosion_date), 
+model_universe <- Data_Monthly |>
+  left_join(Data_Failed_Companies |> select(permno, implosion_date), 
             by = "permno") |>
   mutate(
     # A. Calculate Time Distance to Failure (in Months)
@@ -293,7 +315,7 @@ model_universe <- crsp_monthly |>
   )
 
 # 3. Apply the "Recovery" & "Target" Logic
-ml_panel <- model_universe |>
+Data_y <- model_universe |>
   mutate(
     # --- A. The Zombie Dummy (State Flag) ---
     # Active if date is AFTER implosion but WITHIN the 18-month window
@@ -314,68 +336,40 @@ ml_panel <- model_universe |>
     )
   ) |>
   # Note: We do NOT filter out NA targets yet. We keep the rows.
-  select(permno, date, mkt_cap, prc, ret, TARGET_12M, is_zombie, months_dist, implosion_date)
+  select(permno, date, mkt_cap, price, ret, TARGET_12M, is_zombie, months_dist, implosion_date)
+
+# Count how many unique firms have at least one positive target (1)
+unique_failed_firms <- ml_panel |>
+  filter(TARGET_12M == 1) |>
+  summarise(
+    n_firms = n_distinct(permno),  # The number of unique companies
+    total_obs = n()                # The total number of monthly rows labeled "1"
+  )
+
+print(unique_failed_firms)
+
+# Check for firms with > 1 distinct implosion date
+multiple_crash_check <- ml_panel |>
+  filter(!is.na(implosion_date)) |>   # Ignore healthy companies (NA date)
+  group_by(permno) |>
+  summarise(
+    unique_dates = n_distinct(implosion_date)
+  ) |>
+  filter(unique_dates > 1)
+
+# View results (Should be empty)
+if(nrow(multiple_crash_check) == 0) {
+  print("Validation Passed: Every firm has exactly one unique implosion date.")
+} else {
+  print("Warning: The following firms have multiple implosion dates:")
+  print(multiple_crash_check)
+}
+
+#### Save the data.
+
+Path <- file.path(Data_CRSP_Directory, "Data_y.rds")
+saveRDS(Data_y, file = Path)
 
 ##=========================================================================#
 ## 7. Descriptive statistics of the dataset.
 ##=========================================================================#
-
-
-
-
-
-
-
-
-
-
-
-
-##=========================================================================#
-## 5. Balance Sheet with EXACT Timestamps (Quarterly)
-##=========================================================================#
-# Note: specific timestamps (RDQ) are found in Quarterly (fundq), not Annual (funda).
-# This is crucial for distress prediction to capture the "news" moment.
-
-comp_q_db <- tbl(wrds, I("comp.fundq"))
-ccm_link_db <- tbl(wrds, I("crsp.ccmxpf_lnkhist")) # The Link Table
-
-# 5a. Filter Link Table
-valid_links <- ccm_link_db |>
-  filter(linktype %in% c("LC", "LU", "LS"), linkprim %in% c("P", "C")) |>
-  select(gvkey, permno = lpermno, linkdt, linkenddt)
-
-# 5b. Fetch Fundamentals
-fund_data <- comp_q_db |>
-  filter(
-    indfmt == "INDL", datafmt == "STD", consol == "C",
-    datadate >= start_date # Broad filter first
-  ) |>
-  select(
-    gvkey, datadate, fyearq, fqtr,
-    rdq,            # << THE KEY: Report Date of Quarterly Earnings
-    atq, ltq,       # Assets, Liabilities (Quarterly)
-    cheq,           # Cash & Equivalents
-    niq,            # Net Income (Quarterly)
-    saleq           # Sales (Quarterly)
-  ) |>
-  inner_join(valid_links, by = "gvkey") |>
-  filter(
-    datadate >= linkdt & (is.na(linkenddt) | datadate <= linkenddt)
-  ) |>
-  collect() |>
-  mutate(
-    datadate = ymd(datadate),
-    rdq = ymd(rdq),
-    # If RDQ is missing, we must impute a "Safe Lag" (standard is +3 or +4 months for quarters)
-    public_date = case_when(
-      !is.na(rdq) ~ rdq,
-      TRUE ~ datadate + months(3) # Fallback if no report date exists
-    )
-  ) |>
-  # Filter: Ensure we only keep data that was actually released
-  filter(!is.na(public_date)) |>
-  select(permno, gvkey, datadate, public_date, atq, ltq, cheq, niq)
-
-# View the result: exact "public_date" tells you when the algorithm can "see" this data.
-print(head(fund_data))

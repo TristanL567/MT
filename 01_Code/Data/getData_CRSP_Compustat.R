@@ -338,33 +338,6 @@ Data_y <- model_universe |>
   # Note: We do NOT filter out NA targets yet. We keep the rows.
   select(permno, date, mkt_cap, price, ret, TARGET_12M, is_zombie, months_dist, implosion_date)
 
-# Count how many unique firms have at least one positive target (1)
-unique_failed_firms <- ml_panel |>
-  filter(TARGET_12M == 1) |>
-  summarise(
-    n_firms = n_distinct(permno),  # The number of unique companies
-    total_obs = n()                # The total number of monthly rows labeled "1"
-  )
-
-print(unique_failed_firms)
-
-# Check for firms with > 1 distinct implosion date
-multiple_crash_check <- ml_panel |>
-  filter(!is.na(implosion_date)) |>   # Ignore healthy companies (NA date)
-  group_by(permno) |>
-  summarise(
-    unique_dates = n_distinct(implosion_date)
-  ) |>
-  filter(unique_dates > 1)
-
-# View results (Should be empty)
-if(nrow(multiple_crash_check) == 0) {
-  print("Validation Passed: Every firm has exactly one unique implosion date.")
-} else {
-  print("Warning: The following firms have multiple implosion dates:")
-  print(multiple_crash_check)
-}
-
 #### Save the data.
 
 Path <- file.path(Data_CRSP_Directory, "Data_y.rds")

@@ -203,7 +203,7 @@ Data_Compustat_Annual_Final <- Data_Compustat_Annual_Raw |>
   filter(public_date <= Sys.Date()) |>
   arrange(permno, datadate)
 
-print(head(Data_Compustat_Final))
+print(head(Data_Compustat_Annual_Final))
 
 length(unique(Data_Compustat_Final$permno))
 

@@ -49,19 +49,18 @@ sourceFunctions <- function (functionDirectory)  {
 #==== 1C - Parameters =========================================================#
 
 ## Directories.
-Data_Directory <- file.path(Path, "02_Data")
+Data_Directory <- file.path(Directory, "02_Data")
 Data_CRSP_Directory <- file.path(Data_Directory, "CRSP")
+Data_Compustat_Directory <- file.path(Data_Directory, "Compustat")
+Data_Dataset_Directory <- file.path(Data_Directory, "Dataset")
 
-Charts_Directory <- file.path(Path, "04_Charts")
-DescriptiveStats_Charts_Directory <- file.path(Charts_Directory, "DescriptiveStatistics")
-
-Functions_Directory <- file.path(Path, "01_Code/Data/Subfunctions")
+Functions_Directory <- file.path(Directory, "01_Code/Data/Subfunctions")
 
 ## Load all code files in the functions directory.
 sourceFunctions(Functions_Directory)
 
 ## Date range.
-start_date <- ymd("2023-01-01")
+start_date <- ymd("1965-01-01")
 end_date <- ymd("2024-12-31")
 
 ## Charts.
@@ -70,10 +69,30 @@ width <- 3755
 heigth <- 1833
 
 ##=============================================================================#
-## 2. Descriptive Statistics
+##==== 2 - Input Data =========================================================#
 ##=============================================================================#
 
-#==== 2A - Constituent Universe ===============================================#
+##==== 2A - Input Data =========================================================#
+
+##=================================##
+## Load the dependent variable data.
+##=================================##
+
+Path <- file.path(Data_CRSP_Directory, "Data_y.rds")
+Data_y <- readRDS(Path)
+
+##=================================##
+## Load the features (X variable space).
+##=================================##
+
+Path <- file.path(Data_Compustat_Directory, "Data_Compustat_Annual.rds")
+Data_Compustat_Annual <- readRDS(Path)
+
+##=============================================================================#
+##==== 3 - Descriptive Statistics =============================================#
+##=============================================================================#
+
+#==== 3A - Constituent Universe ===============================================#
 
 ## Generic.
 stats_overview <- tibble(
@@ -135,24 +154,25 @@ kbl(table_naics, format = "latex", booktabs = TRUE,
     col.names = c("Industry Sector", "Count", "Percentage (%)", "Source")) |>
   kable_styling(latex_options = c("hold_position"))
 
-#==== 2A - ML Dataset =========================================================#
+#==== 3B - ML Dataset =========================================================#
 
 ##===================================##
-## Overall Implosion: 
+## 1. Descriptive Stats: Safe vs Danger
 ##===================================##
 
-numeric_cols <- ml_panel |>
+# A. Identify numeric columns to analyze
+# We exclude IDs and binary flags
+numeric_cols <- Dataset |>
   select(where(is.numeric)) |>
   colnames()
 
-# Remove ID columns and non-predictive columns from the list
-vars_to_analyze <- setdiff(numeric_cols, c("permno", "is_zombie", "months_dist", "TARGET_12M"))
+vars_to_exclude <- c("permno", "y", "is_zombie_flag", "pred_year", "sich", "gvkey")
+vars_to_analyze <- setdiff(numeric_cols, vars_to_exclude)
 
-# 2. Generate Summary Statistics by Group (Safe vs Danger)
-# We exclude the 'is_zombie' rows (NA target) from this specific comparison
-desc_by_target <- ml_panel |>
-  filter(!is.na(TARGET_12M)) |>
-  mutate(Group = if_else(TARGET_12M == 1, "Danger (Pre-Crash)", "Safe/Normal")) |>
+# B. Generate Statistics
+desc_by_target <- Dataset |>
+  # Create readable Group names based on 'y'
+  mutate(Group = if_else(y == 1, "Danger (Pre-Crash)", "Safe/Normal")) |>
   select(Group, all_of(vars_to_analyze)) |>
   pivot_longer(cols = -Group, names_to = "Feature", values_to = "Value") |>
   group_by(Feature, Group) |>
@@ -160,143 +180,124 @@ desc_by_target <- ml_panel |>
     Mean = mean(Value, na.rm = TRUE),
     Median = median(Value, na.rm = TRUE),
     SD = sd(Value, na.rm = TRUE),
-    # P25 = quantile(Value, 0.25, na.rm = TRUE), # Optional
-    # P75 = quantile(Value, 0.75, na.rm = TRUE), # Optional
     .groups = "drop"
   ) |>
   arrange(Feature, Group)
 
-# 3. Format as a Comparison Table
-# Pivot wider to put Safe vs Danger side-by-side
+# C. Format Table
 final_desc_table <- desc_by_target |>
   pivot_wider(
     names_from = Group, 
     values_from = c(Mean, Median, SD),
     names_glue = "{Group}_{.value}"
   ) |>
+  # Reorder columns for readability
   select(Feature, 
          contains("Safe/Normal_Mean"), contains("Danger (Pre-Crash)_Mean"),
          contains("Safe/Normal_SD"), contains("Danger (Pre-Crash)_SD"))
 
-# Output LaTeX Table
+# D. Output
 kbl(final_desc_table, format = "latex", booktabs = TRUE, digits = 3,
     caption = "Descriptive Statistics: Safe vs. Pre-Implosion Firms",
     col.names = c("Feature", "Mean (Safe)", "Mean (Danger)", "SD (Safe)", "SD (Danger)")) |>
   kable_styling(latex_options = c("scale_down", "hold_position"))
 
 ##===================================##
-## Descriptive Stats: Survival and Recovery Rates. 
+## 2. Survival and Recovery Rates
 ##===================================##
 
-outcome_analysis <- failed_companies |>
-  select(permno, implosion_date) |>
-  # Join with the full panel to check for data availability after 18 months
-  left_join(ml_panel |> 
-              group_by(permno) |> 
-              summarise(last_date = max(date), .groups = "drop"), 
-            by = "permno") |>
+# A. Identify Event Firms and define the "Target Year" (Event + 2)
+Event_Firms <- Dataset |>
+  filter(y == 1) |>
+  select(permno, event_year = pred_year, mkt_cap_event = mkt_cap) |>
+  mutate(target_year = event_year + 2)
+
+# B. Find Outcome (Status 2 years later)
+# We join specifically on (Permno) AND (Target Year == Pred Year)
+Outcomes <- Event_Firms |>
+  left_join(
+    Dataset |> select(permno, pred_year, mkt_cap_future = mkt_cap),
+    by = c("permno" = "permno", "target_year" = "pred_year")
+  ) |>
   mutate(
-    # Check if they survived 18 months (approx 548 days)
-    months_survived = interval(implosion_date, last_date) %/% months(1),
-    is_survivor = months_survived > 18
+    # If mkt_cap_future is NA, it means the firm was delisted/missing 2 years later
+    is_survivor = !is.na(mkt_cap_future),
+    
+    # Calculate CAGR for survivors
+    cagr_2yr = ifelse(is_survivor, (mkt_cap_future / mkt_cap_event)^(1/2) - 1, NA_real_)
   )
 
-# 2. Add Performance Data for Survivors
-# We join the CAGR calculated in the previous 'survivor_performance' step.
-# If a stock is NOT a survivor, CAGR will be NA.
-outcome_analysis <- outcome_analysis |>
-  left_join(survivor_performance |> select(permno, post_zombie_cagr), by = "permno")
-
-# 3. Apply the 4-Category Classification Rules
-outcome_classification <- outcome_analysis |>
+# C. Classify the Outcomes
+Outcome_Classification <- Outcomes |>
   mutate(
     Outcome_Category = case_when(
-      # Category 4: Zombie State (Implosion and Removal)
-      # Did not survive the 18-month window (or delisted immediately after)
-      !is_survivor ~ "Zombie State (Delisted)",
+      # Category 4: Dead (No data found 2 years later)
+      !is_survivor ~ "Zombie State (Delisted/Inactive)",
       
-      # Category 3: Implosion (Zombie-state but no overall removal)
-      # Survived, but negative returns (Value Trap)
-      is_survivor & post_zombie_cagr <= 0 ~ "Implosion (Stagnation)",
+      # Category 3: Implosion (Survived but lost value)
+      is_survivor & cagr_2yr <= 0 ~ "Implosion (Stagnation)",
       
-      # Category 2: Recovery (Low returns)
-      # Survived, positive growth but <= 10%
-      is_survivor & post_zombie_cagr > 0 & post_zombie_cagr <= 0.10 ~ "Recovery (Low Growth)",
+      # Category 2: Low Growth (Positive but <= 10%)
+      is_survivor & cagr_2yr > 0 & cagr_2yr <= 0.10 ~ "Recovery (Low Growth)",
       
-      # Category 1: Recovery (Strong Growth)
-      # Survived, > 10% CAGR (The "Ecstasy" candidates)
-      is_survivor & post_zombie_cagr > 0.10 ~ "Recovery (Strong Growth)",
+      # Category 1: Strong Growth (> 10%)
+      is_survivor & cagr_2yr > 0.10 ~ "Recovery (Strong Growth)",
       
-      TRUE ~ "Unknown" # Safety catch
+      TRUE ~ "Unknown"
     )
   )
 
-# 4. Generate the Summary Table
-outcome_table <- outcome_classification |>
+# D. Generate Summary Table
+outcome_table <- Outcome_Classification |>
   group_by(Outcome_Category) |>
   summarise(
     Count = n(),
-    Percentage = n() / nrow(outcome_classification)
+    Percentage = n() / nrow(Outcome_Classification)
   ) |>
   mutate(Percentage = paste0(round(Percentage * 100, 2), "%")) |>
-  arrange(desc(Count)) # Sort by most common result
+  arrange(desc(Count))
 
-# 5. Output LaTeX Table
+# Output
 kbl(outcome_table, format = "latex", booktabs = TRUE, 
-    caption = "Post-Implosion Outcomes: Survival and Recovery Rates",
+    caption = "Post-Implosion Outcomes (2-Year Horizon)",
     col.names = c("Outcome Category", "Count", "Percentage")) |>
-  kable_styling(latex_options = c("hold_position"))
+  kable_styling(latex_options = "hold_position")
 
 ##===================================##
-## Descriptive Stats: Multiple implosions.
+## 3. Frequency of Implosions
 ##===================================##
 
-implosion_counts <- monthly_signals |> # Use the object from Step 5
-  arrange(permno, date) |>
+# A. Get Total Universe of Firms (All unique permnos in the cleaned set)
+All_Firms <- unique(Dataset$permno)
+
+# B. Count Events per Firm
+Events_Per_Firm <- Dataset |>
   group_by(permno) |>
-  mutate(
-    # Check criteria again (Drawdown < -0.8)
-    # We use a simplified check here just to count the "entries" into the crash zone
-    is_crash = drawdown <= -0.8,
-    
-    # Lag the crash flag to find the "Starts"
-    prev_crash = lag(is_crash, default = FALSE),
-    
-    # A "New Event" is when we are in a crash today, but weren't last month
-    new_event = is_crash & !prev_crash
-  ) |>
-  summarise(
-    total_implosions = sum(new_event, na.rm = TRUE)
-  ) |>
+  summarise(total_events = sum(y, na.rm = TRUE)) |>
   ungroup()
 
-# 2. Generate Frequency Table
-# How many firms crashed 0 times, 1 time, 2 times?
-implosion_freq_table <- implosion_counts |>
-  count(total_implosions) |>
+# C. Categorize
+implosion_freq_table <- Events_Per_Firm |>
+  count(total_events) |>
   mutate(
-    # Create the categories first
     Category = case_when(
-      total_implosions == 0 ~ "Never Imploded",
-      total_implosions == 1 ~ "Single Implosion",
-      total_implosions >= 2 ~ "Multiple Implosions"
+      total_events == 0 ~ "Never Imploded",
+      total_events == 1 ~ "Single Implosion",
+      total_events >= 2 ~ "Multiple Implosions"
     )
   ) |>
-  # CRITICAL STEP: Group by the new Category and Sum the counts
   group_by(Category) |>
   summarise(
     Count = sum(n),
     .groups = "drop"
   ) |>
-  # Calculate percentages on the aggregated data
   mutate(
-    Percentage = Count / sum(Count) * 100
+    Percentage = Count / sum(Count) * 100,
+    Category = factor(Category, levels = c("Never Imploded", "Single Implosion", "Multiple Implosions"))
   ) |>
-  # Optional: Reorder levels so "Never" is first, "Multiple" is last
-  mutate(Category = factor(Category, levels = c("Never Imploded", "Single Implosion", "Multiple Implosions"))) |>
   arrange(Category)
 
-# 3. Output LaTeX
+# D. Output
 kbl(implosion_freq_table, format = "latex", booktabs = TRUE, digits = 2,
     caption = "Frequency of Catastrophic Implosions per Firm",
     col.names = c("Category", "Number of Firms", "Percentage (%)")) |>

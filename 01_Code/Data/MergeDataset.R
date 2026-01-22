@@ -167,9 +167,6 @@ Data_Compustat_Clean <- Data_Compustat_Annual |>
 # Preview
 glimpse(Data_Compustat_Clean)
 
-# Preview
-print(head(Data_Compustat_Clean))
-
 ##=============================================================================#
 ##==== 3 - Merging ============================================================#
 ##=============================================================================#
@@ -183,15 +180,18 @@ Data_Targets_Annual <- Data_y |>
   group_by(permno, year) |>
   slice(1) |>
   ungroup() |>
-  
   transmute(
     permno,
     pred_date = date,           
     pred_year = year,     
     target_next_12m = TARGET_12M,
     is_zombie_flag = is_zombie, 
-    months_dist = months_dist
+    months_dist = months_dist,
+    years_dist = ifelse(months_dist > 0, ceiling(months_dist / 12), NA_real_)
   )
+
+###
+glimpse(Data_Targets_Annual)
 
 ##=================================##
 ## Merge the datasets (assuming no delay in financial data release).
@@ -222,12 +222,49 @@ Dataset <- Dataset |>
   ) |>
   ungroup()
 
-## Now remove some uncessary columns.
+##=================================##
+## Remove unecessary columns.
+##=================================##
 
 Dataset <- Dataset |>
-  filter(!is.na(at)) |>                # Remove missing financials
-  filter(!is.na(target_next_12m)) |>   # Remove active zombies
-  select(-implosion_start_year, -last_event_year)
+  rename(y = target_next_12m) |>
+  filter(!is.na(at)) |>
+  filter(!is.na(y)) |>
+  select(
+    -months_dist, 
+    -years_dist, 
+    -implosion_start_year, 
+    -last_event_year
+  )
+
+ ### Check the dataset if we have observations where there is a 1 in the next year too.
+Dataset <- Dataset |>
+  arrange(permno, pred_year) |>
+  group_by(permno) |>
+  mutate(
+    prev_y = lag(y, default = 0)
+  ) |>
+  filter(!(y == 1 & prev_y == 1)) |>
+  select(-prev_y) |>
+  ungroup()
+
+### Check the number of CSI events.
+Events_Per_Firm <- Dataset |>
+  group_by(permno) |>
+  summarise(
+    total_events = sum(y, na.rm = TRUE),
+    min_year = min(pred_year),
+    max_year = max(pred_year)
+  ) |>
+  arrange(desc(total_events))
+
+print(head(Events_Per_Firm, 10))
+
+table(Events_Per_Firm$total_events)
+
+# 4. Verify the Grand Total
+Grand_Total <- sum(Events_Per_Firm$total_events)
+print(paste("Total CSI Events:", Grand_Total))
 
 ##=================================##
 ## Merge the datasets (assuming a 3 month delay in financial data release).
@@ -236,101 +273,7 @@ Dataset <- Dataset |>
 Data_Features_Realistic <- Data_Compustat_Clean |>
   mutate(public_date = datadate + months(3))
 
-Dataset_Delayed <- Data_Targets_Annual |>
-  left_join(
-    Data_Features_Realistic,
-    by = join_by(
-      permno, 
-      closest(pred_date >= public_date)
-    )
-  ) |>
-  mutate(dataset_type = "Realistic (Lagged)") |>
-  select(permno, pred_date, target_next_12m, is_zombie_flag, pred_year, public_date, everything())
 
-# We calculate this BEFORE filtering stale data so we don't break the timeline
-Dataset_Delayed <- Dataset_Delayed |>
-  arrange(permno, pred_year) |>
-  group_by(permno) |>
-  mutate(
-    implosion_start_year = ifelse(coalesce(target_next_12m, 0) == 1, pred_year, NA_real_),
-    last_event_year = lag(implosion_start_year)
-  ) |>
-  fill(last_event_year, .direction = "down") |>
-  mutate(
-    years_since_last_implosion = pred_year - last_event_year,
-    was_zombie_ever = !is.na(years_since_last_implosion),
-    years_since_last_implosion = replace_na(years_since_last_implosion, -1)
-  ) |>
-  ungroup()
-
-# Now we apply the filters for the final training set
-Dataset_Delayed <- Dataset_Delayed |>
-  filter(!is.na(at)) |>
-  filter(pred_date <= public_date + months(18)) |>
-  filter(!is.na(target_next_12m)) |>
-  select(-implosion_start_year, -last_event_year)
-
-
-
-Dataset_Delayed |> 
-  filter(permno == 10026) |> 
-  select(pred_year, target_next_12m, was_zombie_ever, years_since_last_implosion, fyear)
-
-##=================================##
-## Verification.
-##=================================##
-
-check_naive <- Dataset |> 
-  filter(permno == 10026, pred_year == 2000) |> 
-  select(permno, pred_date, sale)
-
-check_real <- Dataset_Delayed |> 
-  filter(permno == 10026, pred_year == 2000) |> 
-  select(permno, pred_date, fyear, sale, public_date)
-
-print("--- Naive Merge (Biased) ---")
-print(check_naive)
-
-print("--- Realistic Merge (Safe) ---")
-print(check_real)
-
-##=================================##
-## Check for surviving zombie firms.
-##=================================##
-
-Recovering_Zombies <- Dataset_Delayed |> # Using the dataset with full history (including Zombies)
-  arrange(permno, fyear) |>
-  group_by(permno) |>
-  
-  # 1. Identify the 'Death Year' (First time Target = 1)
-  mutate(
-    # Find the first year we predicted a crash
-    crash_prediction_year = ifelse(
-      any(target_next_12m == 1, na.rm = TRUE),
-      min(fyear[target_next_12m == 1], na.rm = TRUE),
-      NA
-    ),
-    
-    # Calculate Year-over-Year EBIT Growth
-    ebit_prev = lag(ebit),
-    ebit_growth = ebit - ebit_prev,
-    
-    # 2. Flag rows that are AFTER the crash year (The "Zombie" Zone)
-    # Note: If Pred Year is 1990 -> Crash is 1991. So 1992+ are Zombie years.
-    is_zombie_period = fyear > (crash_prediction_year + 1)
-  ) |>
-  
-  # 3. Filter for the specific scenario you asked for:
-  # "Zombie Period" AND "EBIT is Going Up"
-  filter(
-    is_zombie_period == TRUE,
-    ebit_growth > 0
-  ) |>
-  
-  select(permno, fyear, crash_prediction_year, ebit, ebit_prev, ebit_growth, price_at_pred)
-
-# View the firms that are "fighting back"
-print(head(Recovering_Zombies))
 
 ##=============================================================================#
 ##==== 4 - Output =============================================================#

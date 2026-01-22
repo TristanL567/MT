@@ -481,8 +481,11 @@ The feature set is organized into three primary categories: Balance Sheet Struct
 
 \section{Dataset Merging}
 
-%==== Chapter 6: Research Background ==========================================%
+%==== Chapter 6: Descriptive Statistics =======================================%
 
+\chapter{Descriptive Statistics}
+
+%======= Section 6A ===========#
 
 
 %==== Chapter 7: References ===================================================%

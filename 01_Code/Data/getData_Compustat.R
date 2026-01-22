@@ -18,7 +18,7 @@ Directory <- file.path(here::here("")) ## You need to install the package first 
 
 packages <- c("here", "xts", "dplyr", "tidyr",
               "RPostgres", "tidyverse", "tidyfinance", "scales",
-              "RSQLite", "dbplyr", "lubridate"
+              "RSQLite", "dbplyr", "lubridate", "openxlsx"
 )
 
 for(i in 1:length(packages)){
@@ -50,6 +50,7 @@ sourceFunctions <- function (functionDirectory)  {
 Data_Directory <- file.path(Directory, "02_Data")
 Data_CRSP_Directory <- file.path(Data_Directory, "CRSP")
 Data_Compustat_Directory <- file.path(Data_Directory, "Compustat")
+Data_VariableDefinitions_Directory <- file.path(Directory, "01_Code/Data/Variables_Annual.xlsx")
 
 Functions_Directory <- file.path(Directory, "01_Code/Data/Subfunctions")
 
@@ -85,11 +86,19 @@ Data_y <- readRDS(Path)
 
 id <- unique(Data_y$permno)
 
+##=================================##
+## Variables definitions (stored in Excel).
+##=================================##
+
+balancesheet_variables <- read.xlsx(Data_VariableDefinitions_Directory, sheet = "balancesheet_annual")
+incomestatement_variables <- read.xlsx(Data_VariableDefinitions_Directory, sheet = "incomestatement_annual")
+other_variables <- read.xlsx(Data_VariableDefinitions_Directory, sheet = "other_annual")
+
 ##=============================================================================#
 ##==== 3 - Compustat Data =====================================================#
 ##=============================================================================#
 
-##==== 3 - Data Download ======================================================#
+##==== 3A - Preparation for the Data Download =================================#
 
 ##=================================##
 ## Setup the database connection.
@@ -104,17 +113,21 @@ ccm_link_db <- tbl(wrds, I("crsp.ccmxpf_lnkhist"))
 
 valid_links <- ccm_link_db |>
   filter(
-    lpermno %in% target_permnos, 
+    lpermno %in% id, 
     linktype %in% c("LC", "LU", "LS"), 
     linkprim %in% c("P", "C")
   ) |>
   select(gvkey, permno = lpermno, linkdt, linkenddt)
 
+##==== 3B - Balance Sheet Data ================================================#
+
+balancesheet_identifier <- balancesheet_variables$identifier
+
 ##=================================##
-## Fetch the fundamental data.
+## Fetch the balance-sheet data.
 ##=================================##
 
-Data_Compustat_Annual_Raw <- comp_a_db |>
+Data_Compustat_Annual_BalanceSheet <- comp_a_db |>
   inner_join(valid_links, by = "gvkey") |> 
   filter(
     indfmt == "INDL", datafmt == "STD", consol == "C",
@@ -125,101 +138,198 @@ Data_Compustat_Annual_Raw <- comp_a_db |>
     # --- Identifiers & Meta ---
     permno, gvkey, datadate, fyear, sich,
     
-    # --- 1. Core Performance ("The Truth") ---
-    sale,       # Net Sales
-    gp,         # Gross Profit (Pricing Power / Inflation Pass-through)
-    cogs,       # Cost of Goods Sold
-    xsga,       # SG&A (Operational Overhead)
-    xrd,        # R&D Expense (Burn Rate - Crucial for Biotech/Tech)
-    ni,         # Net Income
-    ebit,       # Earnings Before Interest & Taxes
-    oancf,      # Operating Cash Flow (Paper: Top Predictor) [cite: 55]
+    # --- Balance Sheet: Assets ---
+    at,       # Assets - Total
+    act,      # Current Assets - Total
+    che,      # Cash and Short-Term Investments
+    ivst,     # Short-Term Investments - Total
+    rect,     # Receivables - Total
+    invt,     # Inventories - Total
+    aco,      # Current Assets - Other - Total
     
-    # --- 2. Debt Structure (Interest Rate Interactions) ---
-    dltt,       # Long-Term Debt - Total
-    dlc,        # Debt in Current Liabilities (Total Short-term)
-    dd1,        # Long-Term Debt Due in 1 Year (The "Refinancing Wall")
-    xint,       # Interest Expense - Total
-    xinst,      # Interest Expense - Short-Term (Direct Fed Rates exposure)
-    idit,       # Interest Income (Natural hedge against rate hikes)
-    pstk,       # Preferred Stock (Quasi-debt, high duration risk)
+    # --- Non-Current Assets ---
+    ppent,    # Property, Plant and Equipment - Total (Net)
+    ivpt,     # Investments - Permanent - Total
+    intan,    # Intangible Assets - Total
+    gdwl,     # Goodwill
+    txdba,    # Deferred Tax Asset - Long Term
+    ao,       # Assets - Other
     
-    # --- 3. Balance Sheet: Assets (Liquidity & Stuffing) ---
-    at,         # Total Assets
-    act,        # Total Current Assets
-    che,        # Cash & Short-Term Investments
-    ivst,       # Short-Term Investments (Parking cash)
-    rect,       # Receivables (Fraud signal: Channel Stuffing)
-    invt,       # Inventories (Distress signal: Bloated stock)
-    lifr,       # LIFO Reserve (Inflation interaction)
-    intan,      # Intangibles (Soft assets)
-    gdwl,       # Goodwill (Risk of massive write-down/Implosion)
-    txdba,      # Deferred Tax Assets (Accounting aggression)
+    # --- Balance Sheet: Liabilities ---
+    lt,       # Liabilities - Total
+    lct,      # Current Liabilities - Total
+    ap,       # Accounts Payable - Trade
+    txp,      # Income Taxes Payable
+    drc,      # Deferred Revenue - Current
+    dlc,      # Debt in Current Liabilities - Total
+    dd1,      # Long-Term Debt Due in One Year
     
-    # --- 4. Fixed Obligations & Macro Sensitivities ---
-    lt,         # Total Liabilities
-    lct,        # Total Current Liabilities
-    mrct,       # Rental Commitments (5yr Total) - "Hidden" Operating Leverage
-    fca,        # Foreign Exchange Income/Loss (Currency Macro interaction)
-    capx,       # Capital Expenditures (Growth vs. Preservation)
+    # --- Non-Current Liabilities ---
+    dltt,     # Long-Term Debt - Total
+    txditc,   # Deferred Taxes and Investment Tax Credit
+    lo,       # Liabilities - Other - Total
+    mib,      # Noncontrolling Interest (Balance Sheet)
     
-    # --- 5. Equity & Payouts ---
-    seq,        # Stockholders' Equity (Parent)
-    mib,        # Noncontrolling Interest
-    dv,         # Cash Dividends (Paper: ff_div_yld) [cite: 192]
-    dvt,        # Dividends - Total (Includes preferred)
-    xi,         # Extraordinary Items (Signal of "One-off" distress)
-    ci,         # Comprehensive Income (Hidden losses)
-    
-    # --- 6. Market Data (For Market Cap & Returns) ---
-    prcc_f,     # Price Close - Annual Fiscal
-    csho,       # Common Shares Outstanding
-    ajex        # Adjustment Factor (Cumulative) - MANDATORY
+    # --- Balance Sheet: Equity ---
+    seq,      # Stockholders Equity - Parent
+    cstk,     # Common/Ordinary Stock (Capital)
+    caps,     # Capital Surplus/Share Premium
+    pstk,     # Preferred/Preference Stock (Capital) - Total
+    re,       # Retained Earnings
+    acominc,  # Accumulated Other Comprehensive Income (Loss)
+    tstk      # Treasury Stock - Total
   ) |>
   collect()
 
-# View the result: exact "public_date" tells you when the algorithm can "see" this data.
-print(head(Data_Compustat_Annual_Raw))
-
 ##=================================##
-## Local processing.
+## Save the data.
 ##=================================##
 
-Data_Compustat_Annual_Final <- Data_Compustat_Annual_Raw |>
-  mutate(
-    datadate = ymd(datadate),
-    
-    # 1. Create a "Safe" Public Date for Annual Data
-    # Statutory deadline is usually 90 days, but we use 4 months to be safe
-    # and account for processing time/minor delays.
-    safe_lag_date = datadate + months(4),
-    
-    # 2. Use 'repdte' if available (you must add it to your SELECT list first), 
-    # otherwise default to the Safe Lag.
-    # Note: If you didn't download 'repdte', just use 'safe_lag_date'.
-    public_date = safe_lag_date 
+Path <- file.path(Data_Compustat_Directory, "Data_Compustat_Annual_BalanceSheet.rds")
+saveRDS(Data_Compustat_Annual_BalanceSheet, file = Path)
+
+##==== 3C - Income Statement Data =============================================#
+
+incomestatement_identifier <- incomestatement_variables$identifier
+
+##=================================##
+## Fetch the balance-sheet data.
+##=================================##
+
+Data_Compustat_Annual_IncomeStatement <- comp_a_db |>
+  inner_join(valid_links, by = "gvkey") |> 
+  filter(
+    indfmt == "INDL", datafmt == "STD", consol == "C",
+    datadate >= start_date, 
+    datadate >= linkdt & (is.na(linkenddt) | datadate <= linkenddt)
   ) |>
-  # 3. Ensure we don't use future data
-  filter(public_date <= Sys.Date()) |>
-  arrange(permno, datadate)
+  select(
+    # --- Identifiers & Meta ---
+    permno, gvkey, datadate, fyear, sich,
+    
+    # --- Top Line & Margins ---
+    sale,     # Net Sales
+    cogs,     # Cost of Goods Sold
+    gp,       # Gross Profit
+    
+    # --- Operating Expenses ---
+    xsga,     # Selling, General and Administrative Expenses
+    xrd,      # Research and Development Expense
+    dp,       # Depreciation and Amortization
+    spi,      # Special Items
+    
+    # --- Operating Profit ---
+    ebit,     # Earnings Before Interest & Taxes
+    
+    # --- Non-Operating / Interest ---
+    xint,     # Interest and Related Expense - Total
+    xinst,    # Interest Expense - Short-Term
+    idit,     # Interest Income
+    nopi,     # Non-Operating Income (Expense)
+    fca,      # Foreign Exchange Income/Loss
+    
+    # --- Pretax & Taxes ---
+    pi,       # Pretax Income
+    txt,      # Income Taxes - Total
+    
+    # --- Bottom Line / EPS ---
+    xi,       # Extraordinary Items
+    ni,       # Net Income (Loss)
+    epsfi,    # Earnings Per Share (Basic) - Excl. Extra Items
+    
+    # --- Comprehensive / Payouts ---
+    ci,       # Comprehensive Income - Total
+    dv,       # Cash Dividends (FIXED: Added back)
+    dvt       # Dividends - Total
+  ) |>
+  collect()
 
-print(head(Data_Compustat_Annual_Final))
+##=================================##
+## Save the data.
+##=================================##
 
-length(unique(Data_Compustat_Final$permno))
+Path <- file.path(Data_Compustat_Directory, "Data_Compustat_Annual_IncomeStatement.rds")
+saveRDS(Data_Compustat_Annual_IncomeStatement, file = Path)
+
+##==== 3D - Other Data ========================================================#
+
+other_identifier <- other_variables$identifier
+
+##=================================##
+## Fetch the balance-sheet data.
+##=================================##
+
+Data_Compustat_Annual_Other <- comp_a_db |>
+  inner_join(valid_links, by = "gvkey") |> 
+  filter(
+    indfmt == "INDL", datafmt == "STD", consol == "C",
+    datadate >= start_date, 
+    datadate >= linkdt & (is.na(linkenddt) | datadate <= linkenddt)
+  ) |>
+  select(
+    # --- Identifiers & Meta ---
+    permno, gvkey, datadate, fyear, sich,
+    
+    # --- Real Economy / Efficiency ---
+    emp,      # Employees
+    
+    # --- Profitability Adjustments ---
+    oibdp,    # Operating Income Before Depreciation (EBITDA)
+
+    # --- Discretionary Expenses ---
+    xad,      # Advertising Expense
+    xrent,    # Rental Expense
+    
+    # --- Asset Age & Quality ---
+    ppegt,    # Property, Plant and Equipment - Total (Gross)
+    
+    # --- Liquidity & Valuation ---
+    wcap,     # Working Capital (Balance Sheet)
+    mkvalt,   # Market Value - Total (Fiscal)
+    prcc_f,   # Price Close - Annual Fiscal (ADDED)
+    csho,     # Common Shares Outstanding (ADDED)
+    ajex      # Adjustment Factor (Company) - Cumulative by Ex-Date
+  ) |>
+  collect()
+
+##=================================##
+## Save the data.
+##=================================##
+
+Path <- file.path(Data_Compustat_Directory, "Data_Compustat_Annual_Other.rds")
+saveRDS(Data_Compustat_Annual_Other, file = Path)
 
 ##=============================================================================#
-##==== 4 - Output the Data ====================================================#
+##==== 4 - Output the Consolidated Data =======================================#
 ##=============================================================================#
 
 ##=================================##
-## Save the compustat data.
+## Merge the datasets.
 ##=================================##
 
-Path <- file.path(Data_Compustat_Directory, "Data_Compustat_Annual_Raw.rds")
-saveRDS(Data_Compustat_Annual_Raw, file = Path)
+join_keys <- c("permno", "gvkey", "datadate", "fyear", "sich")
 
-Path <- file.path(Data_Compustat_Directory, "Data_Compustat_Annual_Raw.rds")
-saveRDS(Data_Compustat_Annual_Raw, file = Path)
+Data_Compustat_Annual <- Data_Compustat_Annual_BalanceSheet |>
+  inner_join(
+    Data_Compustat_Annual_IncomeStatement, 
+    by = join_keys
+  ) |>
+  inner_join(
+    Data_Compustat_Annual_Other, 
+    by = join_keys
+  ) |>
+  arrange(permno, datadate) |>
+  distinct()
+
+# View the structure of the final master dataset
+glimpse(Data_Compustat_Annual)
+
+##=================================##
+## Save the consolidated data.
+##=================================##
+
+Path <- file.path(Data_Compustat_Directory, "Data_Compustat_Annual.rds")
+saveRDS(Data_Compustat_Annual, file = Path)
 
 ##=============================================================================#
 ##=============================================================================#

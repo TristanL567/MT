@@ -78,8 +78,8 @@ Data_y <- readRDS(Path)
 ## Load the features (X variable space).
 ##=================================##
 
-Path <- file.path(Data_Compustat_Directory, "Data_Compustat_Annual_Raw.rds")
-Data_Compustat_Annual_Raw <- readRDS(Path)
+Path <- file.path(Data_Compustat_Directory, "Data_Compustat_Annual.rds")
+Data_Compustat_Annual <- readRDS(Path)
 
 ##==== 2B - Clean Compustat Data ==============================================#
 
@@ -87,30 +87,91 @@ Data_Compustat_Annual_Raw <- readRDS(Path)
 ## Clean the compustat data.
 ##=================================##
 
-Data_Compustat_Clean <- Data_Compustat_Annual_Raw |>
+Data_Compustat_Clean <- Data_Compustat_Annual |>
   arrange(gvkey, datadate) |>
   group_by(gvkey) |>
   fill(sich, .direction = "updown") |>
+  
+  # --- 1. Impute Zeros ---
   mutate(
-    xrd = replace_na(xrd, 0),
-    invt = replace_na(invt, 0),
-    dd1 = replace_na(dd1, 0),
-    dlc = replace_na(dlc, 0),
-    dltt = replace_na(dltt, 0),
-    pstk = replace_na(pstk, 0),
-    xinst = replace_na(xinst, 0),
-    idit = replace_na(idit, 0),
-    dv = replace_na(dv, 0),
-    dvt = replace_na(dvt, 0)
+    # A) Balance Sheet
+    invt   = replace_na(invt, 0),
+    intan  = replace_na(intan, 0),
+    gdwl   = replace_na(gdwl, 0),
+    txdba  = replace_na(txdba, 0),
+    wcap   = replace_na(wcap, 0),
+    
+    dd1    = replace_na(dd1, 0),
+    dlc    = replace_na(dlc, 0),
+    dltt   = replace_na(dltt, 0),
+    drc    = replace_na(drc, 0),
+    txp    = replace_na(txp, 0),
+    txditc = replace_na(txditc, 0),
+    
+    pstk   = replace_na(pstk, 0),
+    mib    = replace_na(mib, 0),
+    
+    # B) Income Statement
+    xrd    = replace_na(xrd, 0),
+    xad    = replace_na(xad, 0),
+    xrent  = replace_na(xrent, 0),
+    spi    = replace_na(spi, 0),
+    nopi   = replace_na(nopi, 0),
+    fca    = replace_na(fca, 0),
+    dp     = replace_na(dp, 0),
+    
+    xinst  = replace_na(xinst, 0),
+    idit   = replace_na(idit, 0),
+    dv     = replace_na(dv, 0),      # Now this will work
+    dvt    = replace_na(dvt, 0)
   ) |>
+  
+  # --- 2. Market Data Calculation ---
   mutate(
+    # Market Cap: usage of mkvalt is preferred over prcc_f * csho for annual data
+    mkt_cap = mkvalt,
+    
+    # Price Metrics: Now active
     price_abs = abs(prcc_f),
-    mkt_cap = price_abs * csho,
     price_adj = price_abs / ajex
   ) |>
-  filter(at > 0, sale > 0, !is.na(mkt_cap), !is.na(sich)) |>
+  
+  # --- 3. Filtering ---
+  filter(
+    at > 0, 
+    sale > 0,
+    !is.na(mkt_cap), 
+    !is.na(sich)
+  ) |>
   ungroup() |>
+  
+  # --- 4. Final Ordering ---
+  select(
+    permno, gvkey, datadate, fyear, sich,
+    
+    # Balance Sheet
+    at, act, che, ivst, rect, invt, aco, wcap,
+    ppent, ivpt, intan, gdwl, txdba, ao,
+    lt, lct, ap, txp, drc, dlc, dd1,
+    dltt, txditc, lo,
+    seq, mib, cstk, caps, pstk, re, acominc, tstk,
+    
+    # Income Statement
+    sale, cogs, gp,
+    xsga, xrd, xad, xrent, dp, spi,
+    ebit,
+    xint, xinst, idit, nopi, fca,
+    pi, txt, xi, ni,
+    epsfi, ci, dv, dvt,
+    
+    # Other / Market
+    emp, oibdp, dpr, ppegt,
+    mkt_cap, mkvalt, prcc_f, csho, ajex, price_abs, price_adj
+  ) |>
   arrange(permno, datadate)
+
+# Preview
+glimpse(Data_Compustat_Clean)
 
 # Preview
 print(head(Data_Compustat_Clean))
@@ -123,9 +184,7 @@ print(head(Data_Compustat_Clean))
 
 Data_Targets_Annual <- Data_y |>
   mutate(year = year(date)) |>
-  # Keep only December rows
   filter(month(date) == 12) |>
-  # For each firm/year, keep the LAST recorded date (e.g., Dec 29 or Dec 31)
   arrange(permno, year, desc(date)) |>
   group_by(permno, year) |>
   slice(1) |>

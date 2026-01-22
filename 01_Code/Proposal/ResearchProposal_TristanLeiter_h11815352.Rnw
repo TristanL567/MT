@@ -309,9 +309,177 @@ Showing that decision trees (handling the non-linearities) are better than the l
 
 \end{enumerate}
 
-%==== Chapter 5: Methodology ==================================================%
+%==== Chapter 5: Data =========================================================%
 
+\chapter{Data}
 
+%======= Section 5A ===========#
+
+\section{Constituent Universe (CRSP)}
+
+The study utilizes the Center for Research in Security Prices (CRSP) database, specifically the \textit{Stock Security Information History} (\texttt{stksecurityinfohist}) and \textit{Monthly Stock File} (\texttt{msf}) accessed via WRDS. To ensure data quality and constituent continuity, the investable universe is constructed through a four-step process:
+
+\begin{enumerate}
+    \item \textbf{Whole Sample:} The initial sample includes all unique permanent identifiers (\texttt{permno}) in the CRSP database, covering the entire history of US-listed securities to eliminate survivorship bias.
+    \item \textbf{Aggregation:} Data is aggregated by \texttt{permno} to define the distinct trading lifetime, calculated as the duration between the earliest listing date and the final removal date.
+    \item \textbf{Filtering Criteria:} The universe is subjected to the following filters:
+    \begin{itemize}
+        \item \textbf{Security Type:} Restricted to common equities (\texttt{securitytype="EQTY"}, \texttt{sharetype="COM"}), explicitly excluding ETFs and other Mutual Funds.
+        \item \textbf{Exchange:} Limited to major US exchanges (NYSE, AMEX, NASDAQ).
+        \item \textbf{Historical Depth:} Excludes securities removed prior to January 1, 1966.
+        \item \textbf{Minimum Lifetime:} Requires a listing duration of at least 5 years to learn on multiple datapoints from each firm and to ensure the same methodology for the computation of the dependent variable.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Sample Overview}
+
+The final dataset spans from January 1960 to December 2024, comprising 1,064,324 firm-month observations across 3,629 unique equity issuers (Table \ref{tab:agg_stats}).
+
+\begin{table}[ht]
+\centering
+\caption{Aggregate Sample Statistics}
+\label{tab:agg_stats}
+\begin{tabular}{lr}
+\toprule
+Statistic & Value \\
+\midrule
+Total Unique Firms (N) & 3,629 \\
+Total Firm-Month Observations & 1,064,324 \\
+Average Months per Firm & 293 \\
+Sample Period & 1960-01-31 to 2024-12-31 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Industry Classification}
+
+Economic activity is categorized using the \textbf{North American Industry Classification System (NAICS)}. NAICS codes are available in CRSP from August 2001; for securities delisted prior to this, legacy SIC codes are mapped to equivalent NAICS sectors to ensure complete coverage. These classifications will later on by changed
+to match the ones by the Global Industry Classification Standard (GICS).
+
+\begin{table}[!h]
+\centering
+\caption{Constituent Distribution by Industry Sector (NAICS/SIC Hybrid)}
+\centering
+\begin{tabular}[t]{lrrl}
+\toprule
+Industry Sector & Count & Percentage (\%) & Source\\
+\midrule
+Manufacturing & 1285 & 35.4 & NAICS\\
+Finance and Insurance & 547 & 15.1 & NAICS\\
+Professional, Scientific, \& Technical Services & 237 & 6.5 & NAICS\\
+Real Estate and Rental and Leasing & 217 & 6.0 & NAICS\\
+Information & 215 & 5.9 & NAICS\\
+\addlinespace
+Mining, Quarrying, and Oil \& Gas Extraction & 188 & 5.2 & NAICS\\
+Admin. Support \& Waste Mgmt & 139 & 3.8 & NAICS\\
+Retail Trade & 131 & 3.6 & NAICS\\
+Wholesale Trade & 128 & 3.5 & NAICS\\
+Management of Companies and Enterprises & 108 & 3.0 & NAICS\\
+\addlinespace
+Transportation and Warehousing & 102 & 2.8 & NAICS\\
+Utilities & 87 & 2.4 & NAICS\\
+Accommodation and Food Services & 67 & 1.8 & NAICS\\
+Health Care and Social Assistance & 57 & 1.6 & NAICS\\
+Construction & 55 & 1.5 & NAICS\\
+\addlinespace
+Educational Services & 18 & 0.5 & NAICS\\
+Arts, Entertainment, and Recreation & 16 & 0.4 & NAICS\\
+Agriculture, Forestry, Fishing \& Hunting & 15 & 0.4 & NAICS\\
+Other Services (except Public Admin) & 14 & 0.4 & NAICS\\
+Public Administration & 2 & 0.1 & NAICS\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%======= Section 5B ===========#
+
+\section{Features (Compustat)}
+
+To capture corporate fundamental signals, we utilize the \textbf{Compustat Fundamentals Annual} database (\texttt{comp.funda}) accessed via WRDS. This dataset provides comprehensive balance sheet, income statement, and cash flow data for North American publicly traded companies.
+
+\subsection{Data Linking and Merging}
+
+To align fundamental data with the market data defined in the previous section, we employ the \textbf{CRSP/Compustat Merged (CCM)} linking table (\texttt{crsp.ccmxpf\_lnkhist}). This ensures accurate mapping between CRSP permanent identifiers (\texttt{permno}) and Compustat identifiers (\texttt{gvkey}). The linking process enforces the following strict validity criteria:
+\begin{itemize}
+    \item \textbf{Link Type:} Restricted to \texttt{LC} (Link Research), \texttt{LU} (Unresearched Link), and \texttt{LS} (Link System) to ensure high-confidence matches.
+    \item \textbf{Link Primary Marker:} Limited to \texttt{P} (Primary) and \texttt{C} (Composite) to isolate the primary trading vehicle for the firm.
+    \item \textbf{Date Validity:} Fundamental observations are only retained if the fiscal year-end date falls within the valid range defined by the link start (\texttt{linkdt}) and end dates (\texttt{linkenddt}).
+\end{itemize}
+
+\subsection{Filtering and Universe Alignment}
+
+Within the Compustat universe, we apply standard filters to ensure data consistency and comparability across firms. We restrict the sample to the Industrial Format (\texttt{indfmt="INDL"}) and Standardized Data Format (\texttt{datafmt="STD"}). Furthermore, we utilize Consolidated financial statements (\texttt{consol="C"}) to capture the full economic entity of the firm.
+
+\subsection{Look-Ahead Bias Mitigation}
+
+TBD.
+
+% A critical aspect of the data processing pipeline is the prevention of look-ahead bias. Financial data is indexed by its fiscal year-end date (\texttt{datadate}) in Compustat, but this information is not publicly available to investors on that specific date. 
+% 
+% To accurately simulate the information set available to a market participant, we institute a **reporting lag protocol**. We define the \textit{Public Availability Date} as 4 months after the fiscal year-end:
+% \begin{equation}
+%     \text{Public Date}_t = \text{Datadate}_t + 4 \text{ months}
+% \end{equation}
+% This conservative 4-month lag (approx. 120 days) accounts for the statutory 90-day filing deadline for 10-K reports plus a buffer for processing delays, ensuring that the model only trains on data that would have been strictly observable at the time of prediction.
+
+\subsection{Feature Selection}
+
+We extract a comprehensive set of fundamental variables capturing distinct dimensions of firm health. Beyond standard performance metrics, our selection specifically targets **distress precursors** identified in the "Zombie" firm literature. These include \textit{Retained Earnings} (to capture historical accumulated deficits), \textit{Deferred Tax Assets} (proxying for loss carryforwards), and \textit{Discretionary Expenses} (advertising and R\&D cuts signaling cash preservation).
+
+The feature set is organized into three primary categories: Balance Sheet Structure, Operational Performance, and Supplementary Distress Signals. The complete list of variables is detailed in Table \ref{tab:compustat_vars}.
+
+\begin{table}[ht]
+\centering
+\caption{Selected Fundamental Features (Compustat)}
+\label{tab:compustat_vars}
+\scriptsize
+\begin{tabular}{llp{7.5cm}}
+\toprule
+\textbf{Category} & \textbf{Variable Code} & \textbf{Description} \\
+\midrule
+\textbf{Balance Sheet: Assets} 
+ & \texttt{at} / \texttt{act} & Total Assets / Total Current Assets \\
+ & \texttt{che} / \texttt{ivst} & Cash \& Short-Term Inv. / Short-Term Investments \\
+ & \texttt{rect} / \texttt{invt} & Receivables (Channel stuffing risk) / Inventories \\
+ & \texttt{wcap} & Working Capital (Liquidity buffer) \\
+ & \texttt{ppent} / \texttt{intan} & Net PP\&E / Intangibles (Soft assets) \\
+ & \texttt{gdwl} & Goodwill (Impairment risk) \\
+ & \texttt{txdba} & Deferred Tax Asset (Long Term) - \textit{Proxy for NOLs} \\
+\addlinespace
+\textbf{Balance Sheet: Liab/Eq} 
+ & \texttt{lt} / \texttt{lct} & Total Liabilities / Total Current Liabilities \\
+ & \texttt{dltt} / \texttt{dlc} & Long-Term Debt / Debt in Current Liabilities \\
+ & \texttt{dd1} & Long-Term Debt Due in 1 Year (\textit{Refinancing wall}) \\
+ & \texttt{ap} / \texttt{txp} & Accounts Payable / Income Taxes Payable \\
+ & \texttt{txditc} & Deferred Taxes \& Inv. Tax Credit (Non-current) \\
+ & \texttt{seq} / \texttt{re} & Stockholders' Equity / Retained Earnings (\textit{Accum. Deficit}) \\
+ & \texttt{pstk} / \texttt{mib} & Preferred Stock / Noncontrolling Interest \\
+ & \texttt{tstk} & Treasury Stock (Contra-equity) \\
+\addlinespace
+\textbf{Income Statement} 
+ & \texttt{sale} / \texttt{gp} & Net Sales / Gross Profit \\
+ & \texttt{cogs} / \texttt{xsga} & Cost of Goods Sold / SG\&A Expense \\
+ & \texttt{ebit} / \texttt{oibdp} & EBIT / Operating Income Before Deprec. (\textit{EBITDA}) \\
+ & \texttt{ni} / \texttt{pi} & Net Income / Pretax Income (\textit{Tax efficiency check}) \\
+ & \texttt{epsfi} & Earnings Per Share (Basic) \\
+ & \texttt{spi} & Special Items (\textit{Early warning signal}) \\
+ & \texttt{xint} / \texttt{xinst} & Total Interest Exp. / Short-Term Interest Exp. \\
+ & \texttt{xrd} / \texttt{xad} & R\&D Exp. / Advertising Exp. (\textit{Discretionary cuts}) \\
+ & \texttt{xrent} & Rental Expense (Operational rigidity) \\
+ & \texttt{dp} & Depreciation \& Amortization \\
+\addlinespace
+\textbf{Supplementary} 
+ & \texttt{emp} & Number of Employees (\textit{Real economy anchor}) \\
+ & \texttt{dpr} / \texttt{ppegt} & Accum. Depreciation / Gross PPE (\textit{Asset age ratio}) \\
+ & \texttt{fca} & Foreign Exchange Income/Loss \\
+ & \texttt{mkvalt} & Market Value (Fiscal Year-End) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%======= Section 5C ===========#
+
+\section{Dataset Merging}
 
 %==== Chapter 6: Research Background ==========================================%
 

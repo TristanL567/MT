@@ -94,7 +94,7 @@ Data_Compustat_Clean <- Data_Compustat_Annual |>
   
   # --- 1. Impute Zeros ---
   mutate(
-    # A) Balance Sheet
+    # Balance Sheet
     invt   = replace_na(invt, 0),
     intan  = replace_na(intan, 0),
     gdwl   = replace_na(gdwl, 0),
@@ -111,7 +111,7 @@ Data_Compustat_Clean <- Data_Compustat_Annual |>
     pstk   = replace_na(pstk, 0),
     mib    = replace_na(mib, 0),
     
-    # B) Income Statement
+    # Income Statement
     xrd    = replace_na(xrd, 0),
     xad    = replace_na(xad, 0),
     xrent  = replace_na(xrent, 0),
@@ -122,30 +122,24 @@ Data_Compustat_Clean <- Data_Compustat_Annual |>
     
     xinst  = replace_na(xinst, 0),
     idit   = replace_na(idit, 0),
-    dv     = replace_na(dv, 0),      # Now this will work
+    dv     = replace_na(dv, 0),
     dvt    = replace_na(dvt, 0)
+    
+    # Other: Removed dpr
   ) |>
   
-  # --- 2. Market Data Calculation ---
+  # --- 2. Market Data ---
   mutate(
-    # Market Cap: usage of mkvalt is preferred over prcc_f * csho for annual data
     mkt_cap = mkvalt,
-    
-    # Price Metrics: Now active
     price_abs = abs(prcc_f),
     price_adj = price_abs / ajex
   ) |>
   
-  # --- 3. Filtering ---
-  filter(
-    at > 0, 
-    sale > 0,
-    !is.na(mkt_cap), 
-    !is.na(sich)
-  ) |>
+  # --- 3. Filter ---
+  filter(at > 0, sale > 0, !is.na(mkt_cap), !is.na(sich)) |>
   ungroup() |>
   
-  # --- 4. Final Ordering ---
+  # --- 4. Select ---
   select(
     permno, gvkey, datadate, fyear, sich,
     
@@ -164,8 +158,8 @@ Data_Compustat_Clean <- Data_Compustat_Annual |>
     pi, txt, xi, ni,
     epsfi, ci, dv, dvt,
     
-    # Other / Market
-    emp, oibdp, dpr, ppegt,
+    # Other (Removed dpr)
+    emp, oibdp, ppegt,
     mkt_cap, mkvalt, prcc_f, csho, ajex, price_abs, price_adj
   ) |>
   arrange(permno, datadate)

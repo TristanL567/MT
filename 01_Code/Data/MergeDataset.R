@@ -182,12 +182,12 @@ Data_Targets_Annual <- Data_y |>
   ungroup() |>
   transmute(
     permno,
-    pred_date = date,           
-    pred_year = year,     
-    target_next_12m = TARGET_12M,
-    is_zombie_flag = is_zombie, 
-    months_dist = months_dist,
-    years_dist = ifelse(months_dist > 0, ceiling(months_dist / 12), NA_real_)
+    pred_date = date,            
+    pred_year = year,      
+    target_next_12m = y,
+    # Note: Zombie months are filtered out, so this flag is just for tracking history
+    is_zombie_flag = if_else(months_dist < 0 & months_dist >= -ZOMBIE_WINDOW, 1, 0),
+    months_dist = months_dist
   )
 
 ###
@@ -232,7 +232,6 @@ Dataset <- Dataset |>
   filter(!is.na(y)) |>
   select(
     -months_dist, 
-    -years_dist, 
     -implosion_start_year, 
     -last_event_year
   )
@@ -242,10 +241,11 @@ Dataset <- Dataset |>
   arrange(permno, pred_year) |>
   group_by(permno) |>
   mutate(
-    prev_y = lag(y, default = 0)
+    prev_y = lag(y, default = 0),
+    prev_year = lag(pred_year, default = 0) # Track the year of the previous row
   ) |>
-  filter(!(y == 1 & prev_y == 1)) |>
-  select(-prev_y) |>
+  filter(!(y == 1 & prev_y == 1 & (pred_year - prev_year == 1))) |>
+  select(-prev_y, -prev_year) |>
   ungroup()
 
 ### Check the number of CSI events.
@@ -270,10 +270,54 @@ print(paste("Total CSI Events:", Grand_Total))
 ## Merge the datasets (assuming a 3 month delay in financial data release).
 ##=================================##
 
-Data_Features_Realistic <- Data_Compustat_Clean |>
-  mutate(public_date = datadate + months(3))
+# Data_Features_Realistic <- Data_Compustat_Clean |>
+#   mutate(public_date = datadate + months(3))
 
+##==== 3C - Check the datasets ================================================#
 
+##=========================================================================#
+## Corrected Analysis: Handling "Ghost" Crashes
+##=========================================================================#
+
+# 1. Aggregation per Firm
+Firm_Analysis <- Dataset |>
+  group_by(permno) |>
+  summarise(
+    # Count visible crash rows
+    visible_crash_events = sum(y, na.rm = TRUE),
+    
+    # Check if they have history of a crash (even if the crash row was deleted)
+    recovered = any(years_since_last_implosion > 0),
+    
+    years_survived = max(years_since_last_implosion, -1)
+  ) |>
+  mutate(
+    # A firm belongs to the "Crashed" universe if it has a visible crash 
+    # OR if it is in the recovery state.
+    ever_crashed = visible_crash_events > 0 | recovered
+  ) |>
+  ungroup()
+
+##=========================================================================#
+## Adjusted Report
+##=========================================================================#
+
+Total_Firms <- nrow(Firm_Analysis)
+True_Crash_Universe <- sum(Firm_Analysis$ever_crashed)
+Count_Recovered <- sum(Firm_Analysis$recovered)
+
+cat("==============================================================\n")
+cat("               CSI POST-MORTEM ANALYSIS (CORRECTED)           \n")
+cat("==============================================================\n")
+cat(sprintf("1. TOTAL FIRMS IN DATASET:         %d\n", Total_Firms))
+cat(sprintf("   - Firms with CSI History:       %d (%.1f%%)\n", 
+            True_Crash_Universe, (True_Crash_Universe/Total_Firms)*100))
+cat("\n")
+cat(sprintf("2. RECOVERY ANALYSIS\n"))
+cat(sprintf("   - Firms that Recovered:            %d\n", Count_Recovered))
+cat(sprintf("   - Adjusted Recovery Rate:          %.1f%%\n", 
+            (Count_Recovered / True_Crash_Universe)*100))
+cat("==============================================================\n")
 
 ##=============================================================================#
 ##==== 4 - Output =============================================================#
@@ -292,8 +336,8 @@ saveRDS(Dataset, file = Path)
 ## Save the Dataset (assuming a 3-month data delay).
 ##=================================##
 
-Path <- file.path(Data_Dataset_Directory, "Dataset_Delayed.rds")
-saveRDS(Dataset_Delayed, file = Path)
+# Path <- file.path(Data_Dataset_Directory, "Dataset_Delayed.rds")
+# saveRDS(Dataset_Delayed, file = Path)
 
 ##=============================================================================#
 ##=============================================================================#

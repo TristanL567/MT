@@ -56,6 +56,9 @@ Data_Dataset_Directory <- file.path(Data_Directory, "Dataset")
 
 Functions_Directory <- file.path(Directory, "01_Code/Data/Subfunctions")
 
+## Directories for charts.
+Charts_Directory <- file.path(Directory, "04_Charts/DescriptiveStatistics")
+
 ## Load all code files in the functions directory.
 sourceFunctions(Functions_Directory)
 
@@ -205,6 +208,8 @@ kbl(final_desc_table, format = "latex", booktabs = TRUE, digits = 3,
 ##===================================##
 ## 2. Survival and Recovery Rates
 ##===================================##
+
+#### CODE IS WRONG.
 
 # A. Identify Event Firms and define the "Target Year" (Event + 2)
 Event_Firms <- Dataset |>
@@ -408,72 +413,97 @@ ggsave(
 ## Sample of implosions.
 ##===================================##
 
-set.seed(123) # Set seed for reproducibility
-sample_permnos <- sample(failed_companies$permno, 20)
+categories <- unique(Outcome_Classification$Outcome_Category)
 
-# 2. Prepare the Time Series Data
-plot_data <- crsp_monthly |>
-  filter(permno %in% sample_permnos) |>
-  inner_join(failed_companies |> select(permno, implosion_date), by = "permno") |>
-  mutate(
-    # Create a clean label for the facet titles (Permno)
-    label = as.character(permno) 
+# 2. Loop through each category
+for (cat in categories) {
+  
+  # --- A. Sampling ---
+  # Sample 10 Permnos from this specific category
+  set.seed(123) # Ensure reproducibility
+  
+  target_permnos <- Outcome_Classification |>
+    filter(Outcome_Category == cat) |>
+    pull(permno)
+  
+  # Handle cases with fewer than 10 firms
+  if(length(target_permnos) > 10) {
+    sample_permnos <- sample(target_permnos, 10)
+  } else {
+    sample_permnos <- target_permnos
+  }
+  
+  # Skip if no firms found (safety check)
+  if(length(sample_permnos) == 0) next
+  
+  # --- B. Prepare Data ---
+  # Filter the main daily/monthly data (Data_y) for these firms
+  plot_data <- Data_y |>
+    filter(permno %in% sample_permnos) |>
+    # Select only necessary columns to keep it light
+    select(permno, date, price, implosion_date) |>
+    mutate(label = as.character(permno))
+  
+  # --- C. Define Zombie Rectangles ---
+  # Define the 18-month shaded area starting from the Implosion Date
+  zombie_rects <- plot_data |>
+    group_by(permno) |>
+    summarise(
+      implosion_date = first(implosion_date),
+      # End date = Implosion Date + 18 Months
+      zombie_end = first(implosion_date) %m+% months(18),
+      label = first(label)
+    ) |>
+    ungroup()
+  
+  # --- D. Generate Grid Plot ---
+  p_grid <- ggplot(plot_data, aes(x = date, y = price)) +
+    # 1. Shaded Region (Zombie Period)
+    geom_rect(data = zombie_rects,
+              aes(xmin = implosion_date, xmax = zombie_end, 
+                  ymin = -Inf, ymax = Inf),
+              fill = "#7b85f5", alpha = 0.5, inherit.aes = FALSE) +
+    
+    # 2. Price Line
+    geom_line(color = "#1f77b4", linewidth = 0.6) +
+    
+    # 3. Facets (Grid Layout)
+    facet_wrap(~label, scales = "free", ncol = 5) +
+    
+    # 4. Styling
+    labs(title = paste("Outcome Category:", cat),
+         subtitle = "Blue shaded area indicates the 18-month post-implosion window",
+         x = NULL, y = NULL) +
+    theme_bw() +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.text.x = element_text(size = 6, angle = 45, hjust = 1),
+      axis.text.y = element_text(size = 6),
+      strip.background = element_rect(fill = "white", color = "grey80"),
+      strip.text = element_text(size = 8, face = "bold"),
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, size = 10)
+    )
+  
+  # --- E. Save Plot ---
+  # Create a clean filename (replace spaces/slashes with underscores)
+  safe_filename <- str_replace_all(cat, "[^A-Za-z0-9]", "_") |>
+    str_replace_all("__+", "_") # Remove double underscores
+  
+  file_path <- file.path(Charts_Directory, paste0("03_Outcome_Sample_", safe_filename, ".png"))
+  
+  ggsave(
+    filename = file_path,
+    plot = p_grid,
+    width = 3000, 
+    height = 2000, 
+    units = "px", 
+    dpi = 300
   )
-
-# 3. Prepare the "Zombie Zone" Rectangles
-# This defines the 18-month window starting from the Implosion Date
-zombie_rects <- plot_data |>
-  group_by(permno) |>
-  summarise(
-    implosion_date = first(implosion_date),
-    zombie_end = first(implosion_date) %m+% months(18),
-    # Get y-axis limits for each plot to ensure the rectangle covers the full height
-    max_price = max(prc, na.rm = TRUE), 
-    label = as.character(first(permno))
-  ) |>
-  ungroup()
-
-# 4. Generate the Grid Plot
-p_grid <- ggplot(plot_data, aes(x = date, y = prc)) +
-  # A. The Blue Shaded Region (Zombie Period)
-  # We use -Inf and Inf for y to shade the entire vertical strip
-  geom_rect(data = zombie_rects,
-            aes(xmin = implosion_date, xmax = zombie_end, 
-                ymin = -Inf, ymax = Inf),
-            fill = "#7b85f5", alpha = 0.6, inherit.aes = FALSE) + # Matches the reference blue-purple
   
-  # B. The Price Line
-  geom_line(color = "#1f77b4", size = 0.6) + # Standard matplotlib blue
-  
-  # C. Faceting (The Grid)
-  facet_wrap(~label, scales = "free", ncol = 5) + 
-  
-  # D. Formatting
-  labs(title = "",
-       x = NULL, y = NULL) + # Reference image has no axis labels
-  theme_bw() +
-  theme(
-    # Clean up the grid to look like the reference
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.text.x = element_text(size = 6, angle = 0),
-    axis.text.y = element_text(size = 6),
-    strip.background = element_rect(fill = "white", color = "grey80"), # Facet label box
-    strip.text = element_text(size = 7),
-    plot.title = element_text(hjust = 0.5, family = "serif", size = 14, face = "bold")
-  )
-
-## Save the plot.
-Path <- file.path(DescriptiveStats_Charts_Directory, "03_Sample_of_Implosions.png")
-ggsave(
-  filename = Path,
-  plot = p_grid,
-  width = width,
-  height = heigth,
-  units = "px",
-  dpi = 300,
-  limitsize = FALSE
-)
+  print(paste("Saved plot:", file_path))
+}
 
 ##===================================##
 ## Imbalance of the dataset.

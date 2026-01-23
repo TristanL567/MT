@@ -38,6 +38,7 @@ knit2pdf(Directory_LaTeX)
 %% Testing different layout.
 \usepackage{geometry}
 \usepackage{xcolor}
+\usepackage[table]{xcolor}
 
 %% Grafik-Pfad.
 \graphicspath{
@@ -309,11 +310,128 @@ Showing that decision trees (handling the non-linearities) are better than the l
 
 \end{enumerate}
 
-%==== Chapter 5: Data =========================================================%
+%==== Chapter 5: Open Questions / Refinements =================================%
+
+\chapter{Refinements}
+
+%% Table 1: Split of firms (implosion vs non implosion) by geometric return.
+
+\begin{table}[!h]
+\centering
+\caption{Long-Term Growth Distribution: Imploded vs. Non-Imploded Firms}
+\centering
+\begin{tabular}[t]{lrr}
+\toprule
+\multicolumn{1}{c}{ } & \multicolumn{2}{c}{Cohort Distribution} \\
+\cmidrule(l{3pt}r{3pt}){2-3}
+Growth\_Category & Imploded Firms & Never Imploded\\
+\midrule
+\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{12.5\%} & \cellcolor{gray!10}{42.6\%}\\
+Moderate Growth (5-10\%) & 16.4\% & 24.2\%\\
+\cellcolor{gray!10}{Low Growth (0-5\%)} & \cellcolor{gray!10}{15.8\%} & \cellcolor{gray!10}{12.2\%}\\
+Low Losses (0 to -5\%) & 13.0\% & 5.7\%\\
+\cellcolor{gray!10}{High Losses (<-5\%)} & \cellcolor{gray!10}{42.4\%} & \cellcolor{gray!10}{15.4\%}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% Table 2: Same as 1 with split by no. of CSI events.
+\begin{table}[!h]
+\centering
+\caption{Long-Term Growth Distribution by Frequency of Implosion Events}
+\centering
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\begin{tabular}[t]{lrrrrrrrr}
+\toprule
+\multicolumn{1}{c}{ } & \multicolumn{8}{c}{Number of CSI Events Experienced} \\
+\cmidrule(l{3pt}r{3pt}){2-9}
+Growth\_Category & Events: 0 & Events: 1 & Events: 2 & Events: 3 & Events: 4 & Events: 5 & Events: 6 & Events: 7\\
+\midrule
+\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{42.6\%} & \cellcolor{gray!10}{16.4\%} & \cellcolor{gray!10}{8.6\%} & \cellcolor{gray!10}{6.0\%} & \cellcolor{gray!10}{2.6\%} & \cellcolor{gray!10}{0.0\%} & \cellcolor{gray!10}{0.0\%} & \cellcolor{gray!10}{0.0\%}\\
+Moderate Growth (5-10\%) & 24.2\% & 17.3\% & 14.8\% & 18.5\% & 10.5\% & 7.1\% & 0.0\% & 0.0\%\\
+\cellcolor{gray!10}{Low Growth (0-5\%)} & \cellcolor{gray!10}{12.2\%} & \cellcolor{gray!10}{13.4\%} & \cellcolor{gray!10}{15.4\%} & \cellcolor{gray!10}{25.2\%} & \cellcolor{gray!10}{31.6\%} & \cellcolor{gray!10}{28.6\%} & \cellcolor{gray!10}{33.3\%} & \cellcolor{gray!10}{0.0\%}\\
+High Losses (<-5\%) & 15.4\% & 44.4\% & 44.5\% & 30.5\% & 34.2\% & 7.1\% & 0.0\% & 0.0\%\\
+\cellcolor{gray!10}{Low Losses (0 to -5\%)} & \cellcolor{gray!10}{5.7\%} & \cellcolor{gray!10}{8.5\%} & \cellcolor{gray!10}{16.7\%} & \cellcolor{gray!10}{19.9\%} & \cellcolor{gray!10}{21.1\%} & \cellcolor{gray!10}{57.1\%} & \cellcolor{gray!10}{66.7\%} & \cellcolor{gray!10}{100.0\%}\\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+%% Table 3: Split of firms (implosion vs non implosion) by geometric return and min/max annual return.
+\begin{table}[!h]
+\centering
+\caption{Long-Term Growth Distribution: Imploded vs. Non-Imploded Firms}
+\centering
+\begin{tabular}[t]{lrr}
+\toprule
+\multicolumn{1}{c}{ } & \multicolumn{2}{c}{Cohort Distribution} \\
+\cmidrule(l{3pt}r{3pt}){2-3}
+Growth\_Category & Imploded Firms & Never Imploded\\
+\midrule
+\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{12.5\%} & \cellcolor{gray!10}{42.6\%}\\
+Moderate Growth (5-10\%) & 16.4\% & 24.2\%\\
+\cellcolor{gray!10}{Low Growth (2-5\%)} & \cellcolor{gray!10}{10.1\%} & \cellcolor{gray!10}{7.7\%}\\
+Stagnation (-2-2\%) & 0.0\% & 0.1\%\\
+\cellcolor{gray!10}{Value Destruction (<-2\%)} & \cellcolor{gray!10}{48.5\%} & \cellcolor{gray!10}{16.8\%}\\
+\addlinespace
+Value Destruction (No Recovery) & 1.4\% & 1.1\%\\
+\cellcolor{gray!10}{Unknown} & \cellcolor{gray!10}{11.1\%} & \cellcolor{gray!10}{7.6\%}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% Table 4: Same as Table 3 with split by no. of CSI events.
+\begin{table}[!h]
+\centering
+\caption{Long-Term Growth Distribution by Frequency of Implosion Events}
+\centering
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\begin{tabular}[t]{lrrrrrrrr}
+\toprule
+\multicolumn{1}{c}{ } & \multicolumn{8}{c}{Number of CSI Events Experienced} \\
+\cmidrule(l{3pt}r{3pt}){2-9}
+Growth\_Category & Events: 0 & Events: 1 & Events: 2 & Events: 3 & Events: 4 & Events: 5 & Events: 6 & Events: 7\\
+\midrule
+\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{42.6\%} & \cellcolor{gray!10}{16.4\%} & \cellcolor{gray!10}{8.6\%} & \cellcolor{gray!10}{6.0\%} & \cellcolor{gray!10}{2.6\%} & \cellcolor{gray!10}{0.0\%} & \cellcolor{gray!10}{0.0\%} & \cellcolor{gray!10}{0.0\%}\\
+Moderate Growth (5-10\%) & 24.2\% & 17.3\% & 14.8\% & 18.5\% & 10.5\% & 7.1\% & 0.0\% & 0.0\%\\
+\cellcolor{gray!10}{Low Growth (2-5\%)} & \cellcolor{gray!10}{7.7\%} & \cellcolor{gray!10}{8.5\%} & \cellcolor{gray!10}{10.3\%} & \cellcolor{gray!10}{15.9\%} & \cellcolor{gray!10}{18.4\%} & \cellcolor{gray!10}{14.3\%} & \cellcolor{gray!10}{33.3\%} & \cellcolor{gray!10}{0.0\%}\\
+Stagnation (-2-2\%) & 0.1\% & 0.0\% & 0.0\% & 0.0\% & 0.0\% & 0.0\% & 0.0\% & 0.0\%\\
+\cellcolor{gray!10}{Value Destruction (<-2\%)} & \cellcolor{gray!10}{16.8\%} & \cellcolor{gray!10}{47.7\%} & \cellcolor{gray!10}{53.1\%} & \cellcolor{gray!10}{41.1\%} & \cellcolor{gray!10}{50.0\%} & \cellcolor{gray!10}{35.7\%} & \cellcolor{gray!10}{33.3\%} & \cellcolor{gray!10}{0.0\%}\\
+\addlinespace
+Value Destruction (No Recovery) & 1.1\% & 1.9\% & 1.1\% & 0.0\% & 0.0\% & 0.0\% & 0.0\% & 0.0\%\\
+\cellcolor{gray!10}{Unknown} & \cellcolor{gray!10}{7.6\%} & \cellcolor{gray!10}{8.2\%} & \cellcolor{gray!10}{12.2\%} & \cellcolor{gray!10}{18.5\%} & \cellcolor{gray!10}{18.4\%} & \cellcolor{gray!10}{42.9\%} & \cellcolor{gray!10}{33.3\%} & \cellcolor{gray!10}{100.0\%}\\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+%% Continue with text.
+
+\begin{enumerate}
+
+\item \textbf{Validation of the "Avoidance Alpha" Hypothesis} \\
+
+The analysis confirms that the CSI signal successfully isolates "toxic" assets. In the "Imploded" cohort, \textbf{48.5\%} of firms resulted in long-term \textit{Value Destruction} (CAGR $<-2\%$), compared to only \textbf{16.8\%} in the "Clean" cohort.
+
+This 3x increase in the probability of value destruction validates the conservative definition of the zombie period ($T=78$ weeks). It demonstrates that the target variable $y=1$ is not capturing noise, but rather a fundamental deterioration in solvency. Consequently, the primary mechanism of the "Crash-Filtered" Index is empirically justified: the outperformance is expected to stem primarily from the \textit{avoidance of zeros} (insolvency) rather than the selection of winners.
+
+\item \textbf{Quantifying the "Phoenix Cost" (Type I Error Trade-off)} \\
+A critical refinement for the rebalancing strategy arises from the finding that \textbf{12.5\%} of Imploded firms eventually became "High Growth" assets ($>10\%$ CAGR). These are "Phoenix" stocks that suffered a catastrophic drawdown but successfully restructured (e.g., Amazon in 2001).
+
+
+
+This finding highlights a distinct "Phoenix Cost"—the opportunity cost of excluding a turnaround winner. To mitigate this, the Research Design (Chapter \ref{ch:research_design}) must explicitly incorporate a \textbf{Re-entry Mechanism}. The index cannot permanently blacklist a firm following a CSI event. Instead, the annual or semi-annual rebalancing frequency ($h=6$ or $12$ months) is essential to allow the model to reassess the risk. Once the Autoencoder's anomaly signal decays, the strategy must permit these "Phoenix" stocks to re-enter the portfolio to capture the post-distress recovery phase.
+
+\item \textbf{The "Serial Offender" Non-Linearity} \\
+The breakdown of outcomes by event count reveals a non-linear dose-response relationship. Firms experiencing exactly one CSI event show a \textbf{47.7\%} rate of value destruction, which rises to \textbf{53.1\%} for firms with two events. 
+
+This refines the feature engineering approach for the Supervised Model. It suggests that "Past CSI Count" or "Time Since Last Implosion" are not merely historical metadata but predictive state variables. A linear model might interpret a -80\% crash as a "mean reversion" buying opportunity; however, the data suggests that conditional on crashing once, the probability of future stagnation remains structurally elevated. This justifies the use of the \textbf{Autoencoder}, which is capable of encoding this non-linear "memory" of distress into the latent feature vector $z$, differentiating between a "cheap" value stock and a "structurally impaired" serial offender.
+
+\end{enumerate}
+
+%==== Chapter 6: Data =========================================================%
 
 \chapter{Data}
 
-%======= Section 5A ===========#
+%======= Section 6A ===========#
 
 \section{Constituent Universe (CRSP)}
 
@@ -391,7 +509,7 @@ Public Administration & 2 & 0.1 & NAICS\\
 \end{tabular}
 \end{table}
 
-%======= Section 5B ===========#
+%======= Section 6B ===========#
 
 \section{Features (Compustat)}
 
@@ -477,18 +595,84 @@ The feature set is organized into three primary categories: Balance Sheet Struct
 \end{tabular}
 \end{table}
 
-%======= Section 5C ===========#
+%======= Section 6C ===========#
 
 \section{Dataset Merging}
 
-%==== Chapter 6: Descriptive Statistics =======================================%
+%==== Chapter 7: Descriptive Statistics =======================================%
 
 \chapter{Descriptive Statistics}
 
-%======= Section 6A ===========#
+%======= Section 7A ===========#
+
+\section{Dataset}
+\subsection{Sample Statistic}
+
+%% 1547 firms implode atleast once.
+
+\begin{table}[!h]
+\centering
+\caption{Aggregate Sample Statistics}
+\centering
+\begin{tabular}[t]{lr}
+\toprule
+Statistic & Value\\
+\midrule
+Total Unique Firms (N) & 3,255\\
+Total Observations & 46,294\\
+Average Years per Firm & 13\\
+Sample Start Date & 1998-12-31\\
+Sample End Date & 2024-12-31\\
+\addlinespace
+Total Identified Implosions & 2,507\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Industry Distribution}
+
+\begin{table}[!h]
+\centering
+\caption{Constituent Distribution by Industry Sector (NAICS/SIC Hybrid)}
+\centering
+\begin{tabular}[t]{lrrl}
+\toprule
+Industry Sector & Count & Percentage (\%) & Source\\
+\midrule
+Manufacturing & 1169 & 35.9 & NAICS\\
+Finance and Insurance & 510 & 15.7 & NAICS\\
+Real Estate and Rental and Leasing & 214 & 6.6 & NAICS\\
+Professional, Scientific, \& Technical Services & 191 & 5.9 & NAICS\\
+Information & 188 & 5.8 & NAICS\\
+\addlinespace
+Mining, Quarrying, and Oil \& Gas Extraction & 156 & 4.8 & NAICS\\
+Admin. Support \& Waste Mgmt & 127 & 3.9 & NAICS\\
+Retail Trade & 126 & 3.9 & NAICS\\
+Wholesale Trade & 113 & 3.5 & NAICS\\
+Transportation and Warehousing & 96 & 2.9 & NAICS\\
+\addlinespace
+Utilities & 72 & 2.2 & NAICS\\
+Management of Companies and Enterprises & 69 & 2.1 & NAICS\\
+Accommodation and Food Services & 62 & 1.9 & NAICS\\
+Health Care and Social Assistance & 56 & 1.7 & NAICS\\
+Construction & 53 & 1.6 & NAICS\\
+\addlinespace
+Arts, Entertainment, and Recreation & 14 & 0.4 & NAICS\\
+Other Services (except Public Admin) & 13 & 0.4 & NAICS\\
+Agriculture, Forestry, Fishing \& Hunting & 12 & 0.4 & NAICS\\
+Educational Services & 12 & 0.4 & NAICS\\
+Public Administration & 1 & 0.0 & NAICS\\
+\addlinespace
+NA & 1 & 0.0 & SIC (Proxy)\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%======= Section 7A ===========#
 
 
-%==== Chapter 7: References ===================================================%
+
+%==== Chapter 8: References ===================================================%
 
 \bibliographystyle{plainnat} 
 \bibliography{references}

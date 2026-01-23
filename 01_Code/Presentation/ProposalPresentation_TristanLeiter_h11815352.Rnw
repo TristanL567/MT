@@ -53,9 +53,9 @@ knit2pdf(Directory_LaTeX)
 \end{frame}
 
 % 2. Outline
-\begin{frame}{Agenda}
-  \tableofcontents
-\end{frame}
+% \begin{frame}{Agenda}
+%   \tableofcontents
+% \end{frame}
 
 %==== 01 - Introduction =======================================================%
 

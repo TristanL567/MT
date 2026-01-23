@@ -75,6 +75,13 @@ Path <- file.path(Data_CRSP_Directory, "Data_y.rds")
 Data_y <- readRDS(Path)
 
 ##=================================##
+## Check for delistings.
+##=================================##
+
+Path <- file.path(Data_CRSP_Directory, "Annual_Event_Check.rds")
+Annual_Event_Check <- readRDS(Path)
+
+##=================================##
 ## Load the features (X variable space).
 ##=================================##
 
@@ -185,9 +192,7 @@ Data_Targets_Annual <- Data_y |>
     pred_date = date,            
     pred_year = year,      
     target_next_12m = y,
-    # Note: Zombie months are filtered out, so this flag is just for tracking history
-    is_zombie_flag = if_else(months_dist < 0 & months_dist >= -ZOMBIE_WINDOW, 1, 0),
-    months_dist = months_dist
+    trading_status = trading_status
   )
 
 ###
@@ -202,8 +207,25 @@ Dataset <- Data_Targets_Annual |>
     Data_Compustat_Clean, 
     by = join_by(permno, pred_year == fyear)
   ) |>
-  mutate(dataset_type = "Naive (NoDelay)") |>
-  select(permno, pred_date, target_next_12m, is_zombie_flag, pred_year, everything())
+  left_join(Annual_Event_Check, by = c("permno", "pred_year" = "year")) |>
+  mutate(
+    dataset_type = "Naive (NoDelay)",
+    trading_status = case_when(
+      was_halted_or_delisted ~ "Trading Halted / No Status",
+      is.na(trading_status) ~ "Active (Major Exchange)",
+      TRUE ~ trading_status
+    )
+  ) |>
+  select(permno, pred_date, target_next_12m, pred_year, trading_status, everything(), -was_halted_or_delisted)
+
+# 
+# Dataset <- Data_Targets_Annual |>
+#   left_join(
+#     Data_Compustat_Clean, 
+#     by = join_by(permno, pred_year == fyear)
+#   ) |>
+#   mutate(dataset_type = "Naive (NoDelay)") |>
+#   select(permno, pred_date, target_next_12m, pred_year, trading_status, everything())
 
 ## Now compute the time to the last failed event.
 
@@ -220,7 +242,8 @@ Dataset <- Dataset |>
     was_zombie_ever = !is.na(years_since_last_implosion),
     years_since_last_implosion = replace_na(years_since_last_implosion, -1)
   ) |>
-  ungroup()
+  ungroup() |>
+  relocate(years_since_last_implosion, was_zombie_ever, .after = pred_year)
 
 ##=================================##
 ## Remove unecessary columns.
@@ -231,19 +254,19 @@ Dataset <- Dataset |>
   filter(!is.na(at)) |>
   filter(!is.na(y)) |>
   select(
-    -months_dist, 
     -implosion_start_year, 
     -last_event_year
   )
 
- ### Check the dataset if we have observations where there is a 1 in the next year too.
+### Check the dataset if we have observations where there is a 1 in the next year too.
 Dataset <- Dataset |>
-  arrange(permno, pred_year) |>
+  arrange(permno, pred_date) |>  # <--- Sorted by permno and pred_date
   group_by(permno) |>
   mutate(
     prev_y = lag(y, default = 0),
-    prev_year = lag(pred_year, default = 0) # Track the year of the previous row
+    prev_year = lag(pred_year, default = 0)
   ) |>
+  # Remove consecutive '1's (if year diff is exactly 1)
   filter(!(y == 1 & prev_y == 1 & (pred_year - prev_year == 1))) |>
   select(-prev_y, -prev_year) |>
   ungroup()
@@ -258,14 +281,6 @@ Events_Per_Firm <- Dataset |>
   ) |>
   arrange(desc(total_events))
 
-print(head(Events_Per_Firm, 10))
-
-table(Events_Per_Firm$total_events)
-
-# 4. Verify the Grand Total
-Grand_Total <- sum(Events_Per_Firm$total_events)
-print(paste("Total CSI Events:", Grand_Total))
-
 ##=================================##
 ## Merge the datasets (assuming a 3 month delay in financial data release).
 ##=================================##
@@ -273,51 +288,6 @@ print(paste("Total CSI Events:", Grand_Total))
 # Data_Features_Realistic <- Data_Compustat_Clean |>
 #   mutate(public_date = datadate + months(3))
 
-##==== 3C - Check the datasets ================================================#
-
-##=========================================================================#
-## Corrected Analysis: Handling "Ghost" Crashes
-##=========================================================================#
-
-# 1. Aggregation per Firm
-Firm_Analysis <- Dataset |>
-  group_by(permno) |>
-  summarise(
-    # Count visible crash rows
-    visible_crash_events = sum(y, na.rm = TRUE),
-    
-    # Check if they have history of a crash (even if the crash row was deleted)
-    recovered = any(years_since_last_implosion > 0),
-    
-    years_survived = max(years_since_last_implosion, -1)
-  ) |>
-  mutate(
-    # A firm belongs to the "Crashed" universe if it has a visible crash 
-    # OR if it is in the recovery state.
-    ever_crashed = visible_crash_events > 0 | recovered
-  ) |>
-  ungroup()
-
-##=========================================================================#
-## Adjusted Report
-##=========================================================================#
-
-Total_Firms <- nrow(Firm_Analysis)
-True_Crash_Universe <- sum(Firm_Analysis$ever_crashed)
-Count_Recovered <- sum(Firm_Analysis$recovered)
-
-cat("==============================================================\n")
-cat("               CSI POST-MORTEM ANALYSIS (CORRECTED)           \n")
-cat("==============================================================\n")
-cat(sprintf("1. TOTAL FIRMS IN DATASET:         %d\n", Total_Firms))
-cat(sprintf("   - Firms with CSI History:       %d (%.1f%%)\n", 
-            True_Crash_Universe, (True_Crash_Universe/Total_Firms)*100))
-cat("\n")
-cat(sprintf("2. RECOVERY ANALYSIS\n"))
-cat(sprintf("   - Firms that Recovered:            %d\n", Count_Recovered))
-cat(sprintf("   - Adjusted Recovery Rate:          %.1f%%\n", 
-            (Count_Recovered / True_Crash_Universe)*100))
-cat("==============================================================\n")
 
 ##=============================================================================#
 ##==== 4 - Output =============================================================#

@@ -712,8 +712,40 @@ NA & 1 & 0.0 & SIC (Proxy)\\
 %======= Section 7A ===========#
 
 
+%==== Chapter 8: Descriptive Statistics =======================================%
 
-%==== Chapter 8: References ===================================================%
+\chapter{Objective Function}
+
+\section{Model Selection and Optimization Strategy}
+
+\subsection{The Economic Case for Recall at Fixed False Positive Rates}
+The selection of an appropriate objective function is critical when bridging the gap between statistical probability and investment utility. While standard classification metrics like Accuracy or F1-Score are ubiquitous, they often fail to capture the asymmetric costs inherent in the "Agony and Ecstasy" framework. In the context of constructing a "Crash-Filtered" Index, the cost of a False Positive (Type I Error) is not merely a statistical nuisance but a substantial opportunity cost: identifying a high-growth "Ecstasy" stock (e.g., NVIDIA) as a crash candidate results in its exclusion, thereby generating underperformance relative to the benchmark.
+
+Consequently, this thesis adopts a two-staged evaluation strategy:
+
+\begin{enumerate}
+    \item \textbf{Hyperparameter Optimization (CV): Average Precision (AP).} 
+    During the cross-validation and training phase, we optimize for the Area Under the Precision-Recall Curve (AUC-PR/AP). Unlike the Receiver Operating Characteristic (ROC), AP focuses exclusively on the performance of the minority class (Catastrophic Stock Implosion). Since the dataset is highly imbalanced ($\approx 5\%$ prevalence), AP provides a more robust signal for tuning hyperparameters (e.g., tree depth, learning rate) without committing to a specific decision threshold, ensuring the model effectively ranks distress probabilities.
+
+    \item \textbf{Final Model Selection: Recall at Fixed FPR.} 
+    For the final economic evaluation, we transition to a constraint-based metric: \textbf{Recall at Fixed False Positive Rate (FPR)}. This metric aligns directly with the practical "Risk Budget" of a portfolio manager. By fixing the FPR at conservative levels (e.g., $3\%$, $5\%$, or $10\%$), we effectively set a "budget" for mistakenly excluding healthy firms. The objective is to maximize the number of "Agony" stocks identified (Recall) while strictly capping the exclusion of potential "Ecstasy" winners (FPR)]. This approach empirically tests whether the model can decouple tail-risk protection from upside participation, a key limitation of traditional Minimum Volatility strategies.
+\end{enumerate}
+
+%======= Section 2: The AUC Trap ===========%
+
+\section{The Potential Pitfall of AUC-ROC}
+
+\subsection{The "False Positive" Trap in Imbalanced Datasets}
+While the Area Under the Receiver Operating Characteristic Curve (AUC-ROC) is the standard metric in bankruptcy prediction literature, it presents a potential "trap" for this specific research design. The ROC curve plots the True Positive Rate (Recall) against the False Positive Rate across all thresholds. In a dataset where negatives (non-imploding firms) comprise over $95\%$ of observations, the FPR denominator is large. Consequently, a model can misclassify a significant number of high-volatility "Ecstasy" stocks as implosions (False Positives) without significantly increasing the calculated FPR, thereby inflating the AUC-ROC score.
+
+This phenomenon is particularly dangerous for "Avoidance Alpha" strategies. A high AUC-ROC might reflect a model that is excellent at classifying obvious, low-volatility "safe" stocks (the easy negatives) but fails to distinguish between high-volatility winners and high-volatility losers in the tail. 
+
+Therefore, while this study will report AUC-ROC for comparability with existing literature (e.g., \citet{Altman1968}), it serves as a secondary diagnostic. We explicitly monitor for divergence between AUC-ROC and Average Precision to ensure the model is not achieving high scores simply by overfitting to the majority class of "safe" firms while failing to solve the central "Agony and Ecstasy" dilemma.
+
+
+
+
+%==== Chapter 9: References ===================================================%
 
 \bibliographystyle{plainnat} 
 \bibliography{references}

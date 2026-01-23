@@ -18,7 +18,7 @@ Directory <- file.path(here::here("")) ## You need to install the package first 
 
 packages <- c("here", "xts", "dplyr", "tidyr",
               "RPostgres", "tidyverse", "tidyfinance", "scales",
-              "RSQLite", "dbplyr", "lubridate"
+              "RSQLite", "dbplyr", "lubridate", "data.table"
 )
 
 for(i in 1:length(packages)){
@@ -57,7 +57,7 @@ Functions_Directory <- file.path(Directory, "01_Code/Data/Subfunctions")
 sourceFunctions(Functions_Directory)
 
 ## Date range.
-start_date <- ymd("2023-01-01")
+start_date <- ymd("1960-01-01")
 end_date <- ymd("2024-12-31")
 
 ## Saved objects.
@@ -151,14 +151,6 @@ Data_Stock_Masterlist_Raw <- lifetime_stats |>
 Path <- file.path(Data_CRSP_Directory, "Data_Stock_Masterlist_Raw.rds")
 saveRDS(Data_Stock_Masterlist_Raw, file = Path)
 
-# 5. Preview the Master List
-glimpse(Data_Stock_Masterlist_Raw)
-
-## Dimensions.
-
-dim(Data_Stock_Masterlist_Raw)
-unique(Data_Stock_Masterlist_Raw$securitytype)
-
 ## 6A. Filter for EQUITY (and NA) only.
 stock_master_list_filtered <- Data_Stock_Masterlist_Raw |>
   filter(
@@ -198,54 +190,119 @@ universe_subset <- Data_Stock_Masterlist |>
 ##=========================================================================#
 
 ##========================##
-## Download the firm returns.
+## Optimized Download
 ##========================##
 
-target_permnos <- Data_Stock_Masterlist_Raw$permno
-
+## Pulls ALL the data within this date range. Be careful. High time complexity.
 Data_Monthly_Raw <- msf_db |>
   filter(
-    permno %in% target_permnos,
-    date >= start_date,  # Note: Standard MSF usually uses 'date', not 'mthcaldt'
+    date >= start_date,
     date <= end_date
   ) |>
   select(
     permno, 
     date, 
-    prc,      # Price (Check for negative values later)
+    prc,      # Price 
     ret,      # Total Return
     retx,     # Return without Dividends
     shrout,   # Shares Outstanding
     vol       # Volume
   ) |>
+  collect() # Bring to R Memory
+
+Path <- file.path(Data_CRSP_Directory, "Data_Monthly_Raw.rds")
+saveRDS(Data_Monthly_Raw, file = Path)
+
+## Now we filter for the permno we actually want.
+target_permnos <- Data_Stock_Masterlist$permno
+
+Data_Monthly_Raw_Filtered <- Data_Monthly_Raw |>
+  filter(permno %in% target_permnos)
+
+##========================##
+## Check for delistings.
+##========================##
+
+Names_Events <- tbl(wrds, sql("SELECT * FROM crsp.msenames"))
+Delisting_Events <- tbl(wrds, sql("SELECT * FROM crsp.msedelist"))
+
+Names_Local <- Names_Events |> 
+  select(permno, namedt, nameendt, exchcd, ticker) |> 
   collect()
 
+Delisting_Local <- Delisting_Events |> 
+  select(permno, dlstdt, dlstcd) |> 
+  collect()
+
+Data_Monthly_Complete <- Data_Monthly_Raw_Filtered |>
+  left_join(Names_Local, by = "permno") |>
+  filter(date >= namedt & date <= nameendt) |>
+  left_join(Delisting_Local, by = c("permno", "date" = "dlstdt")) |>
+  mutate(
+    trading_status = case_when(
+      dlstcd == 100 ~ "Active (Major Exchange)",
+      !is.na(dlstcd) ~ paste0("Delisted: Code ", dlstcd),
+      exchcd %in% c(1, 2, 3) ~ "Active (Major Exchange)",
+      exchcd == 0 ~ "Trading Halted / No Status",
+      
+      TRUE ~ "Inactive/OTC/Unknown"
+    )
+  )
+
+Path <- file.path(Data_CRSP_Directory, "Data_Monthly_Complete.rds")
+saveRDS(Data_Monthly_Complete, file = Path)
+
+# Check the result
+count(Data_Monthly_Complete, trading_status)
+
+#### Check for delistings.
+Annual_Event_Check <- Data_Monthly_Complete |>
+  mutate(year = year(date)) |>
+  group_by(permno, year) |>
+  summarise(
+    # Check if ANY month in this year had a "Delisted" or "Halted" status
+    # Note: 'Delisted: Code 100' was already cleaned to "Active" in the previous step,
+    # so str_detect(..., "Delisted") only catches bad delistings.
+    was_halted_or_delisted = any(
+      str_detect(trading_status, "Delisted") | 
+        trading_status == "Trading Halted / No Status"
+    ),
+    .groups = "drop"
+  )
+
+Path <- file.path(Data_CRSP_Directory, "Annual_Event_Check.rds")
+saveRDS(Annual_Event_Check, file = Path)
+
 ##========================##
-## Compute returns (total return and gross dividends).
+## 2. Compute Returns
 ##========================##
 
-Data_Monthly <- Data_Monthly_Raw |>
+Data_Monthly <- Data_Monthly_Complete |>
+  filter(is.na(ret) | ret > -1) |> 
   arrange(permno, date) |>
+  group_by(permno) |> 
   mutate(
     price_close = abs(prc),
-    ret_total = if_else(ret < -1, NA_real_, ret),
-    ret_price = if_else(retx < -1, NA_real_, retx),
-    div_yield = ret_total - ret_price,
+    ret_total = ret,
+    ret_price = retx,
     prev_price = lag(price_close),
+    div_yield = ret_total - ret_price,
     div_amount = div_yield * prev_price,
     market_cap = price_close * shrout
   ) |>
+  ungroup() |> 
   filter(!is.na(ret_total)) |>
   select(
     permno, 
     date, 
     price = price_close, 
-    tot_ret_net_dvds = ret_total, # Total return (includes dividends)
-    price_ret = ret_price,        # Price return (excludes dividends)
-    div_amount,                   # Calculated gross dividend amount
+    tot_ret_net_dvds = ret_total, 
+    price_ret = ret_price, 
+    div_amount, 
     market_cap,
     vol,
-    shrout
+    shrout,
+    trading_status
   )
 
 Path <- file.path(Data_CRSP_Directory, "Data_Monthly.rds")
@@ -255,14 +312,11 @@ saveRDS(Data_Monthly, file = Path)
 ## 5. Check for catastrophic implosions (same as the Tewari et al. Methodology)
 ##=========================================================================#
 
-PARAM_C <- -0.8   # Crash threshold (Drawdown <= -80%)
-PARAM_M <- -0.2   # Recovery ceiling (Wealth cannot recover above -20% of Peak)
-PARAM_T <- 18     # Zombie Period: 18 months
+PARAM_C <- -0.8   # Crash threshold
+PARAM_M <- -0.2   # Recovery ceiling
+PARAM_T <- 18     # Zombie Period (months)
 
-##========================##
-## Compute the drawdowns.
-##========================##
-
+### Compute the wealth index.
 Data_Signal_Monthly <- Data_Monthly |>
   group_by(permno) |>
   arrange(date) |>
@@ -275,111 +329,134 @@ Data_Signal_Monthly <- Data_Monthly |>
   ) |>
   ungroup()
 
-##========================##
-## Implosion universe.
-##========================##
-
-implosion_universe <- Data_Signal_Monthly |>
+### Get all potential implosion events.
+potential_implosions <- Data_Signal_Monthly |>
   group_by(permno) |>
   mutate(
     recovery_ceiling = running_max_wealth * (1 + PARAM_M),
-    
     future_max_wealth = zoo::rollapply(wealth_index, width = PARAM_T, 
-                                       FUN = max, 
-                                       align = "left", 
-                                       fill = NA)
+                                       FUN = max, align = "left", fill = NA)
   ) |>
-  ungroup() |>
   filter(
     is_crash_zone,
     future_max_wealth <= recovery_ceiling
-  )
-
-##========================##
-## Universe of the failed companies.
-##========================##
-
-Data_Failed_Companies <- implosion_universe |>
-  group_by(permno) |>
-  summarise(
-    implosion_date = min(date),
-    wealth_at_failure = first(wealth_index[date == min(date)]),
-    peak_wealth = first(running_max_wealth[date == min(date)]),
-    price_at_failure = first(price[date == min(date)]), 
-    lifetime_drawdown = first(drawdown[date == min(date)])
   ) |>
+  select(permno, date) |>
+  arrange(permno, date)
+
+### Filtering for the implosion events. (Needs to be rewored).
+filter_distinct_events <- function(dates, zombie_months = 18) {
+  # Handle empty or single cases
+  if(length(dates) == 0) return(as.Date(character(0)))
+  if(length(dates) == 1) return(dates)
+  
+  # Ensure sorted order is guaranteed
+  dates <- sort(dates)
+  
+  valid_dates <- dates[1]
+  last_valid <- dates[1]
+  
+  # FIX: Iterate by index to preserve Date class
+  for(i in 2:length(dates)) {
+    current_date <- dates[i]
+    
+    # Calculate difference in days
+    # (zombie_months * 30.44) approximates the months to days
+    if(as.numeric(current_date - last_valid) > (zombie_months * 30.44)) {
+      valid_dates <- c(valid_dates, current_date)
+      last_valid <- current_date
+    }
+  }
+  return(valid_dates)
+}
+
+Data_Failed_Events <- potential_implosions |>
+  group_by(permno) |>
+  reframe(implosion_date = filter_distinct_events(date, PARAM_T)) |>
   ungroup()
 
-# Preview results
-print(paste("Identified", nrow(Data_Failed_Companies), "failed companies based on Total Returns."))
-head(Data_Failed_Companies)
+print(paste("Identified", nrow(Data_Failed_Events), "distinct implosion events."))
 
-Path <- file.path(Data_CRSP_Directory, "Data_Failed_Companies.rds")
-saveRDS(Data_Failed_Companies, file = Path)
+Path <- file.path(Data_CRSP_Directory, "Data_Failed_Events.rds")
+saveRDS(Data_Failed_Events, file = Path)
 
 ##=========================================================================#
 ## 6. Setup the data in the long-format.
 ##=========================================================================#
 
-#### rework the 9999.
+PREDICTION_HORIZON <- 12
+BUFFER_WINDOW      <- 6
+ZOMBIE_WINDOW      <- 18
 
-PREDICTION_HORIZON <- 12  # Predict failure 12 months ahead
-BUFFER_WINDOW      <- 6   # Gap between Safe and Danger (Months 13-18)
-ZOMBIE_WINDOW      <- 18  # Post-crash exclusion
+# Convert to data.table objects (Reference copies, very fast)
+dt_monthly <- as.data.table(Data_Monthly)
+dt_events  <- as.data.table(Data_Failed_Events)
 
-model_universe <- Data_Monthly |>
-  left_join(Data_Failed_Companies |> select(permno, implosion_date), 
-            by = "permno") |>
-  mutate(
-    months_dist = interval(date, implosion_date) %/% months(1),
-    months_dist = replace_na(months_dist, 9999)
-  )
+# Ensure dates are Date objects
+dt_monthly[, date := as.Date(date)]
+dt_events[, implosion_date := as.Date(implosion_date)]
+
+# Initialize the target column y as 0 (Safe/Normal)
+dt_monthly[, y := 0]
+
+dt_events[, `:=`(
+  start_target = implosion_date - (PREDICTION_HORIZON * 30.4375),
+  end_target   = implosion_date
+)]
+
+dt_monthly[dt_events, 
+           on = .(permno, date >= start_target, date <= end_target), 
+           y := 1]
+
+dt_events[, `:=`(
+  start_buffer = implosion_date - ((PREDICTION_HORIZON + BUFFER_WINDOW) * 30.4375),
+  end_buffer   = implosion_date - (PREDICTION_HORIZON * 30.4375) - 1 # Avoid overlap
+)]
+
+dt_monthly[dt_events, 
+           on = .(permno, date >= start_buffer, date <= end_buffer), 
+           y := NA_real_]
+
+dt_events[, `:=`(
+  start_zombie = implosion_date + 1,
+  end_zombie   = implosion_date + (ZOMBIE_WINDOW * 30.4375)
+)]
+
+dt_monthly[dt_events, 
+           on = .(permno, date >= start_zombie, date <= end_zombie), 
+           y := NA_real_]
+
+# Convert back to tibble/df
+Data_y <- as_tibble(dt_monthly)
 
 ##========================##
-## Create the final tibble.
+## Compute the annualized returns for each firm.
 ##========================##
 
-Data_y <- model_universe |>
-  mutate(
-    y = case_when(
-      # 1. DANGER ZONE (0 to 12 months before failure)
-      months_dist >= 0 & months_dist <= PREDICTION_HORIZON ~ 1,
-      
-      # 2. BUFFER ZONE (13 to 18 months before failure - Ambiguous)
-      months_dist > PREDICTION_HORIZON & months_dist <= (PREDICTION_HORIZON + BUFFER_WINDOW) ~ NA_real_,
-      
-      # 3. ZOMBIE ZONE (The crash itself + 18 months after)
-      # We remove this period as the firm is "dead" or extremely volatile.
-      months_dist < 0 & months_dist >= -ZOMBIE_WINDOW ~ NA_real_,
-      
-      # 4. RECOVERY ZONE (More than 18 months post-crash)
-      # FIX: We explicitly label these as 0 (Safe) to preserve them.
-      months_dist < -ZOMBIE_WINDOW ~ 0,
-      
-      # 5. SAFE ZONE (Healthy firms or long before failure)
-      TRUE ~ 0
-    )
-  ) |>
-  filter(!is.na(y)) |>
-  select(
-    permno, 
-    date, 
-    market_cap,    
-    price, 
-    ret = tot_ret_net_dvds, 
-    y, 
-    months_dist
+Data_y_annualized <- Data_y |>
+  mutate(year = year(date)) |>
+  group_by(permno, year) |>
+  summarise(
+    annual_ret = prod(1 + tot_ret_net_dvds, na.rm = TRUE) - 1,
+    n_months = n(),
+    .groups = "drop"
   )
 
 ##========================##
 ## Preview and output.
 ##========================##
 
-table(Data_y$y)
+table(Data_y$y, useNA = "always")
+length(unique(Data_y$permno))
 
+### Now output.
 Path <- file.path(Data_CRSP_Directory, "Data_y.rds")
 saveRDS(Data_y, file = Path)
 
+### Now output.
+Path <- file.path(Data_CRSP_Directory, "Data_y_annualized.rds")
+saveRDS(Data_y_annualized, file = Path)
+
 ##=========================================================================#
-## 7. Descriptive statistics of the dataset.
+##=========================================================================#
 ##=========================================================================#

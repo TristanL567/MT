@@ -85,11 +85,25 @@ Path <- file.path(Data_CRSP_Directory, "Data_y.rds")
 Data_y <- readRDS(Path)
 
 ##=================================##
+## Load the delistings data.
+##=================================##
+
+Path <- file.path(Data_CRSP_Directory, "Data_Monthly_Complete.rds")
+Data_Monthly_Complete <- readRDS(Path)
+
+##=================================##
 ## Load the features (X variable space).
 ##=================================##
 
 Path <- file.path(Data_Compustat_Directory, "Data_Compustat_Annual.rds")
 Data_Compustat_Annual <- readRDS(Path)
+
+##=================================##
+## Load the annual returns per year.
+##=================================##
+
+Path <- file.path(Data_CRSP_Directory, "Data_y_annualized.rds")
+Data_y_annualized <- readRDS(Path)
 
 ##=============================================================================#
 ##==== 3 - Descriptive Statistics =============================================#
@@ -97,56 +111,57 @@ Data_Compustat_Annual <- readRDS(Path)
 
 #==== 3A - Constituent Universe ===============================================#
 
-## Generic.
+tryCatch({
+  
 stats_overview <- tibble(
-  Statistic = c(
-    "Total Unique Firms (N)",
-    "Total Firm-Month Observations",
-    "Average Months per Firm",
-    "Sample Start Date",
-    "Sample End Date",
-    "Total Identified Implosions (Failures)",
-    "Implosion Rate (Percentage of N)"
-  ),
-  Value = c(
-    format(n_distinct(ml_panel$permno), big.mark = ","),
-    format(nrow(ml_panel), big.mark = ","),
-    round(nrow(ml_panel) / n_distinct(ml_panel$permno), 0),
-    as.character(min(ml_panel$date)),
-    as.character(max(ml_panel$date)),
-    format(sum(ml_panel$TARGET_12M == 1, na.rm = TRUE) / 12, big.mark = ","), # Approx events (since target is 12m window)
-    # OR better: use the count from your 'failed_companies' list
-    format(nrow(failed_companies), big.mark = ",")
+    Statistic = c(
+      "Total Unique Firms (N)",
+      "Total Observations",
+      "Average Years per Firm",
+      "Sample Start Date",
+      "Sample End Date",
+      "Total Identified Implosions"
+    ),
+    Value = c(
+      format(n_distinct(Dataset$permno), big.mark = ","),
+      format(nrow(Dataset), big.mark = ","),
+      round(nrow(Dataset) / n_distinct(Data_y$permno), 0),
+      as.character(min(Dataset$pred_date, na.rm = TRUE)),
+      as.character(max(Dataset$pred_date, na.rm = TRUE)),
+      format(sum(Dataset$y == 1), big.mark = ","))
   )
-)
+  
+  # Output Overview Table
+  print(
+    kbl(stats_overview, format = "latex", booktabs = TRUE, 
+        caption = "Aggregate Sample Statistics",
+        align = c("l", "r")) |>
+      kable_styling(latex_options = c("hold_position"))
+  )
+  
+##================================##
+## Sector distribution.
+##================================##  
 
-# Add the Percentage Rate
-stats_overview$Value[7] <- paste0(
-  round((nrow(failed_companies) / n_distinct(ml_panel$permno)) * 100, 2), "%"
-)
-
-# 2. Generate LaTeX Table
-kbl(stats_overview, format = "latex", booktabs = TRUE, 
-    caption = "Aggregate Sample Statistics",
-    align = c("l", "r")) |>
-  kable_styling(latex_options = c("hold_position"))
 
 ## Sectors.
 desc_stats_naics <- stock_master_list_filtered |>
   mutate(
-    # Get the NAICS Name
     NAICS_Sector = getSector(naics),
       Final_Sector = coalesce(NAICS_Sector),
-    
-    # Flag which system was used (for transparency)
     Class_System = if_else(!is.na(NAICS_Sector), "NAICS", "SIC (Proxy)")
   )
 
-table_naics <- desc_stats_naics |>
+## Filter for all firms in the final dataset so we dont include any, which are not represented.
+desc_stats_naics_filtered <- desc_stats_naics |>
+  filter(permno %in% unique(Dataset$permno))
+
+## Summarize the table.
+table_naics <- desc_stats_naics_filtered |>
   group_by(Final_Sector) |>
   summarise(
     Count = n(),
-    Percent = round(n() / nrow(desc_stats_naics) * 100, 1),
+    Percent = round(n() / nrow(desc_stats_naics_filtered) * 100, 1),
     System_Used = paste(unique(Class_System), collapse = "/")
   ) |>
   arrange(desc(Count))
@@ -157,163 +172,247 @@ kbl(table_naics, format = "latex", booktabs = TRUE,
     col.names = c("Industry Sector", "Count", "Percentage (%)", "Source")) |>
   kable_styling(latex_options = c("hold_position"))
 
-#==== 3B - ML Dataset =========================================================#
+}, error = function(e) message(e))
 
-##===================================##
-## 1. Descriptive Stats: Safe vs Danger
-##===================================##
+#==== 3B - Desciptive Stats of the Dataset ====================================#
 
-# A. Identify numeric columns to analyze
-# We exclude IDs and binary flags
-numeric_cols <- Dataset |>
-  select(where(is.numeric)) |>
-  colnames()
+tryCatch({
+  
 
-vars_to_exclude <- c("permno", "y", "is_zombie_flag", "pred_year", "sich", "gvkey")
-vars_to_analyze <- setdiff(numeric_cols, vars_to_exclude)
 
-# B. Generate Statistics
-desc_by_target <- Dataset |>
-  # Create readable Group names based on 'y'
-  mutate(Group = if_else(y == 1, "Danger (Pre-Crash)", "Safe/Normal")) |>
-  select(Group, all_of(vars_to_analyze)) |>
-  pivot_longer(cols = -Group, names_to = "Feature", values_to = "Value") |>
-  group_by(Feature, Group) |>
-  summarise(
-    Mean = mean(Value, na.rm = TRUE),
-    Median = median(Value, na.rm = TRUE),
-    SD = sd(Value, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  arrange(Feature, Group)
+}, error = function(e) message(e))
 
-# C. Format Table
-final_desc_table <- desc_by_target |>
-  pivot_wider(
-    names_from = Group, 
-    values_from = c(Mean, Median, SD),
-    names_glue = "{Group}_{.value}"
-  ) |>
-  # Reorder columns for readability
-  select(Feature, 
-         contains("Safe/Normal_Mean"), contains("Danger (Pre-Crash)_Mean"),
-         contains("Safe/Normal_SD"), contains("Danger (Pre-Crash)_SD"))
+#==== 3C - Survival & Recovery Rate ===========================================#
 
-# D. Output
-kbl(final_desc_table, format = "latex", booktabs = TRUE, digits = 3,
-    caption = "Descriptive Statistics: Safe vs. Pre-Implosion Firms",
-    col.names = c("Feature", "Mean (Safe)", "Mean (Danger)", "SD (Safe)", "SD (Danger)")) |>
-  kable_styling(latex_options = c("scale_down", "hold_position"))
-
-##===================================##
-## 2. Survival and Recovery Rates
-##===================================##
-
-#### CODE IS WRONG.
-
-# A. Identify Event Firms and define the "Target Year" (Event + 2)
-Event_Firms <- Dataset |>
-  filter(y == 1) |>
-  select(permno, event_year = pred_year, mkt_cap_event = mkt_cap) |>
-  mutate(target_year = event_year + 2)
-
-# B. Find Outcome (Status 2 years later)
-# We join specifically on (Permno) AND (Target Year == Pred Year)
-Outcomes <- Event_Firms |>
-  left_join(
-    Dataset |> select(permno, pred_year, mkt_cap_future = mkt_cap),
-    by = c("permno" = "permno", "target_year" = "pred_year")
-  ) |>
-  mutate(
-    # If mkt_cap_future is NA, it means the firm was delisted/missing 2 years later
-    is_survivor = !is.na(mkt_cap_future),
-    
-    # Calculate CAGR for survivors
-    cagr_2yr = ifelse(is_survivor, (mkt_cap_future / mkt_cap_event)^(1/2) - 1, NA_real_)
-  )
-
-# C. Classify the Outcomes
-Outcome_Classification <- Outcomes |>
-  mutate(
-    Outcome_Category = case_when(
-      # Category 4: Dead (No data found 2 years later)
-      !is_survivor ~ "Zombie State (Delisted/Inactive)",
-      
-      # Category 3: Implosion (Survived but lost value)
-      is_survivor & cagr_2yr <= 0 ~ "Implosion (Stagnation)",
-      
-      # Category 2: Low Growth (Positive but <= 10%)
-      is_survivor & cagr_2yr > 0 & cagr_2yr <= 0.10 ~ "Recovery (Low Growth)",
-      
-      # Category 1: Strong Growth (> 10%)
-      is_survivor & cagr_2yr > 0.10 ~ "Recovery (Strong Growth)",
-      
-      TRUE ~ "Unknown"
+tryCatch({
+  
+##===============================##
+## Create a tibble with 1 obs for each firm.
+##===============================##
+  
+  CSI_Stats <- Dataset |>
+    group_by(permno) |>
+    summarise(csi_events_total = sum(y, na.rm = TRUE), .groups = "drop")
+  
+  Last_Traded_Stats <- Data_Monthly_Complete |>
+    group_by(permno) |>
+    arrange(date) |>
+    summarise(last_traded_year = year(last(date)), .groups = "drop")
+  
+  Performance_Stats <- Data_y_annualized |>
+    group_by(permno) |>
+    summarise(
+      geometric_mean      = prod(1 + annual_ret, na.rm = TRUE)^(1 / n()) - 1,
+      trading_years_total = n(),
+      min_annual_ret      = min(annual_ret, na.rm = TRUE),
+      max_annual_ret      = max(annual_ret, na.rm = TRUE),
+      .groups = "drop"
     )
-  )
+  
+### The final tibble.
+  Firm_Summary_Tibble <- Performance_Stats |>
+    inner_join(Last_Traded_Stats, by = "permno") |>
+    left_join(CSI_Stats, by = "permno") |>
+    mutate(csi_events_total = replace_na(csi_events_total, 0)) |>
+    select(permno, last_traded_year, geometric_mean, trading_years_total, csi_events_total, 
+           min_annual_ret, max_annual_ret)
+  
+  glimpse(Firm_Summary_Tibble) 
 
-# D. Generate Summary Table
-outcome_table <- Outcome_Classification |>
-  group_by(Outcome_Category) |>
-  summarise(
-    Count = n(),
-    Percentage = n() / nrow(Outcome_Classification)
-  ) |>
-  mutate(Percentage = paste0(round(Percentage * 100, 2), "%")) |>
-  arrange(desc(Count))
-
-# Output
-kbl(outcome_table, format = "latex", booktabs = TRUE, 
-    caption = "Post-Implosion Outcomes (2-Year Horizon)",
-    col.names = c("Outcome Category", "Count", "Percentage")) |>
-  kable_styling(latex_options = "hold_position")
-
-##===================================##
-## 3. Frequency of Implosions
-##===================================##
-
-# A. Get Total Universe of Firms (All unique permnos in the cleaned set)
-All_Firms <- unique(Dataset$permno)
-
-# B. Count Events per Firm
-Events_Per_Firm <- Dataset |>
-  group_by(permno) |>
-  summarise(total_events = sum(y, na.rm = TRUE)) |>
-  ungroup()
-
-# C. Categorize
-implosion_freq_table <- Events_Per_Firm |>
-  count(total_events) |>
-  mutate(
-    Category = case_when(
-      total_events == 0 ~ "Never Imploded",
-      total_events == 1 ~ "Single Implosion",
-      total_events >= 2 ~ "Multiple Implosions"
+##===============================##
+## Classify the firms only by their geometric mean.
+##===============================##
+  Firm_Summary_Classified <- Firm_Summary_Tibble |>
+    mutate(
+      Growth_Category = case_when(
+        geometric_mean > 0.10 ~ "High Growth (>10%)",
+        geometric_mean > 0.05 & geometric_mean <= 0.10 ~ "Moderate Growth (5-10%)",
+        geometric_mean >= 0.00 & geometric_mean <= 0.05 ~ "Low Growth (0-5%)",
+        geometric_mean > -0.05 & geometric_mean < 0.00 ~ "Low Losses (0 to -5%)",
+        geometric_mean <= -0.05 ~ "High Losses (<-5%)",
+        TRUE ~ "Unknown"
+      )
     )
-  ) |>
-  group_by(Category) |>
-  summarise(
-    Count = sum(n),
-    .groups = "drop"
-  ) |>
-  mutate(
-    Percentage = Count / sum(Count) * 100,
-    Category = factor(Category, levels = c("Never Imploded", "Single Implosion", "Multiple Implosions"))
-  ) |>
-  arrange(Category)
+  
+### Split by whether a CSI event occured.
+  Firm_Summary_Classified_split <- Firm_Summary_Classified |>
+    mutate(Cohort = if_else(csi_events_total > 0, "Imploded Firms", "Never Imploded")) |>
+    group_by(Cohort, Growth_Category) |>
+    summarise(Count = n(), .groups = "drop") |>
+    group_by(Cohort) |>
+    mutate(
+      Total_In_Cohort = sum(Count),
+      Percentage = Count / Total_In_Cohort,
+      Percentage_Fmt = scales::percent(Percentage, accuracy = 0.1)
+    ) |>
+    ungroup() |>
+    select(Growth_Category, Cohort, Percentage_Fmt) |>
+    tidyr::pivot_wider(names_from = Cohort, values_from = Percentage_Fmt, values_fill = "0.0%") |>
+    mutate(sort_order = case_when(
+      Growth_Category == "High Growth (>10%)" ~ 1,
+      Growth_Category == "Moderate Growth (5-10%)" ~ 2,
+      Growth_Category == "Low Growth (0-5%)" ~ 3,
+      Growth_Category == "Low Losses (0 to -5%)" ~ 4,
+      Growth_Category == "High Losses (<-5%)" ~ 5,
+      TRUE ~ 6
+    )) |>
+    arrange(sort_order) |>
+    select(-sort_order)
+  
+  Firm_Summary_Classified_split 
+  
+### Split by how many CSI events occured.
+  Firm_Summary_By_Event_Count <- Firm_Summary_Classified |>
+    group_by(csi_events_total, Growth_Category) |>
+    summarise(Count = n(), .groups = "drop") |>
+    group_by(csi_events_total) |>
+    mutate(
+      Total_In_Group = sum(Count),
+      Percentage = Count / Total_In_Group,
+      Percentage_Fmt = scales::percent(Percentage, accuracy = 0.1)
+    ) |>
+    ungroup() |>
+    select(Growth_Category, csi_events_total, Percentage_Fmt) |>
+    mutate(csi_events_total = paste0("Events: ", csi_events_total)) |>
+    tidyr::pivot_wider(names_from = csi_events_total, values_from = Percentage_Fmt, values_fill = "0.0%") |>
+    mutate(sort_order = case_when(
+      Growth_Category == "High Growth (>10%)" ~ 1,
+      Growth_Category == "Moderate Growth (5-10%)" ~ 2,
+      Growth_Category == "Low Growth (0-5%)" ~ 3,
+      Growth_Category == "Low Losses (0 to -5%)" ~ 4,
+      Growth_Category == "High Losses (<-5%)" ~ 5,
+      TRUE ~ 6
+    )) |>
+    arrange(sort_order) |>
+    select(-sort_order)  
+  
+  Firm_Summary_By_Event_Count
 
-# D. Output
-kbl(implosion_freq_table, format = "latex", booktabs = TRUE, digits = 2,
-    caption = "Frequency of Catastrophic Implosions per Firm",
-    col.names = c("Category", "Number of Firms", "Percentage (%)")) |>
-  kable_styling(latex_options = "hold_position")
+##===============================##
+## Classify the firms only by their geometric mean and their max/min growth rate.
+##===============================##
+  
+  Firm_Summary_Classified_Additional <- Firm_Summary_Tibble |>
+    mutate(
+      Growth_Category = case_when(
+        geometric_mean > 0.10 ~ "High Growth (>10%)",
+        geometric_mean > 0.05 & geometric_mean <= 0.10 ~ "Moderate Growth (5-10%)",
+        geometric_mean >= 0.02 & geometric_mean <= 0.05 ~ "Low Growth (2-5%)",
+        geometric_mean <= 0.02 & geometric_mean > -0.02 & max_annual_ret < 0.15 ~ "Stagnation (-2-2%)",
+        geometric_mean <= -0.02 & max_annual_ret < 0.02 ~ "Value Destruction (No Recovery)",
+        geometric_mean <= -0.02 ~ "Value Destruction (<-2%)",
+        
+        TRUE ~ "Unknown"
+      )
+    )
+  
+  # --- Split and Summarize ---
+  
+  Firm_Summary_Classified_Additional_split <- Firm_Summary_Classified_Additional |>
+    mutate(Cohort = if_else(csi_events_total > 0, "Imploded Firms", "Never Imploded")) |>
+    group_by(Cohort, Growth_Category) |>
+    summarise(Count = n(), .groups = "drop") |>
+    group_by(Cohort) |>
+    mutate(
+      Total_In_Cohort = sum(Count),
+      Percentage = Count / Total_In_Cohort,
+      Percentage_Fmt = scales::percent(Percentage, accuracy = 0.1)
+    ) |>
+    ungroup() |>
+    select(Growth_Category, Cohort, Percentage_Fmt) |>
+    tidyr::pivot_wider(names_from = Cohort, values_from = Percentage_Fmt, values_fill = "0.0%") |>
+    mutate(sort_order = case_when(
+      Growth_Category == "High Growth (>10%)" ~ 1,
+      Growth_Category == "Moderate Growth (5-10%)" ~ 2,
+      Growth_Category == "Low Growth (2-5%)" ~ 3,
+      Growth_Category == "Stagnation (-2-2%)" ~ 4,
+      Growth_Category == "Value Destruction (<-2%)" ~ 5,
+      Growth_Category == "Value Destruction (No Recovery)" ~ 6,
+      TRUE ~ 7
+    )) |>
+    arrange(sort_order) |>
+    select(-sort_order)
+  
+  Firm_Summary_Classified_Additional_split
+  
+### Now split by how many CSI events occured.
+  Firm_Summary_By_Event_Count_additional <- Firm_Summary_Classified_Additional |>
+    group_by(csi_events_total, Growth_Category) |>
+    summarise(Count = n(), .groups = "drop") |>
+    group_by(csi_events_total) |>
+    mutate(
+      Total_In_Group = sum(Count),
+      Percentage = Count / Total_In_Group,
+      Percentage_Fmt = scales::percent(Percentage, accuracy = 0.1)
+    ) |>
+    ungroup() |>
+    select(Growth_Category, csi_events_total, Percentage_Fmt) |>
+    mutate(csi_events_total = paste0("Events: ", csi_events_total)) |>
+    tidyr::pivot_wider(names_from = csi_events_total, values_from = Percentage_Fmt, values_fill = "0.0%") |>
+    mutate(sort_order = case_when(
+      Growth_Category == "High Growth (>10%)" ~ 1,
+      Growth_Category == "Moderate Growth (5-10%)" ~ 2,
+      Growth_Category == "Low Growth (2-5%)" ~ 3,
+      Growth_Category == "Stagnation (-2-2%)" ~ 4,
+      Growth_Category == "Value Destruction (<-2%)" ~ 5,
+      Growth_Category == "Value Destruction (No Recovery)" ~ 6,
+      TRUE ~ 7
+    )) |>
+    arrange(sort_order) |>
+    select(-sort_order) 
 
-#==== 2C - Charts =============================================================#
+  Firm_Summary_By_Event_Count_additional  
+  
+  
+  
+##===============================##
+## LaTeX Code.
+##===============================## 
+  
+## First classification.
+  
+kbl(Firm_Summary_Classified_split, format = "latex", booktabs = TRUE, 
+      caption = "Long-Term Growth Distribution: Imploded vs. Non-Imploded Firms",
+      align = c("l", "r", "r")) |>
+    kable_styling(latex_options = c("hold_position", "striped")) |>
+    add_header_above(c(" " = 1, "Cohort Distribution" = 2))  
+  
+## First classification with columns via CSI events.
+  
+kbl(Firm_Summary_By_Event_Count, format = "latex", booktabs = TRUE, 
+      caption = "Long-Term Growth Distribution by Frequency of Implosion Events",
+      align = c("l", rep("r", ncol(Firm_Summary_By_Event_Count) - 1))) |>
+    kable_styling(latex_options = c("hold_position", "striped", "scale_down")) |>
+    add_header_above(c(" " = 1, "Number of CSI Events Experienced" = ncol(Firm_Summary_By_Event_Count) - 1))
+  
+## Second classification.
+  
+kbl(Firm_Summary_Classified_Additional_split, format = "latex", booktabs = TRUE, 
+      caption = "Long-Term Growth Distribution: Imploded vs. Non-Imploded Firms",
+      align = c("l", "r", "r")) |>
+    kable_styling(latex_options = c("hold_position", "striped")) |>
+    add_header_above(c(" " = 1, "Cohort Distribution" = 2))
+  
+## Second classification with columns via CSI events.
 
-##===================================##
-## Implosions over time.
-##===================================##
+kbl(Firm_Summary_By_Event_Count_additional, format = "latex", booktabs = TRUE, 
+    caption = "Long-Term Growth Distribution by Frequency of Implosion Events",
+    align = c("l", rep("r", ncol(Firm_Summary_By_Event_Count_additional) - 1))) |>
+  kable_styling(latex_options = c("hold_position", "striped", "scale_down")) |>
+  add_header_above(c(" " = 1, "Number of CSI Events Experienced" = ncol(Firm_Summary_By_Event_Count_additional) - 1))
 
+
+  
+}, error = function(e) message(e))
+
+##=============================================================================#
+##==== 4 - Charts =============================================================#
+##=============================================================================#
+
+##==== 4A - Implosions over time ==============================================#
+
+tryCatch({
+  
 implosions_by_year <- failed_companies |>
   mutate(year = year(implosion_date)) |>
   count(year, name = "count")
@@ -409,87 +508,118 @@ ggsave(
   limitsize = FALSE
 )
 
-##===================================##
-## Sample of implosions.
-##===================================##
+}, error = function(e) message(e))
 
-categories <- unique(Outcome_Classification$Outcome_Category)
+##==== 4B - Implosion Cases per category ======================================#
+
+tryCatch({
+  
+categories <- unique(Final_Analysis_Table$Outcome_Category)
 
 # 2. Loop through each category
 for (cat in categories) {
   
+  cat(paste0("\nProcessing Category: ", cat, "..."))
+  
   # --- A. Sampling ---
-  # Sample 10 Permnos from this specific category
-  set.seed(123) # Ensure reproducibility
+  cat_data <- Final_Analysis_Table |> filter(Outcome_Category == cat) |>
+    filter(Cohort == "Imploded Firms")
   
-  target_permnos <- Outcome_Classification |>
-    filter(Outcome_Category == cat) |>
-    pull(permno)
-  
-  # Handle cases with fewer than 10 firms
-  if(length(target_permnos) > 10) {
-    sample_permnos <- sample(target_permnos, 10)
+  set.seed(123)
+  if(nrow(cat_data) > 4) {
+    sampled_events <- cat_data |> slice_sample(n = 4)
   } else {
-    sample_permnos <- target_permnos
+    sampled_events <- cat_data
   }
   
-  # Skip if no firms found (safety check)
-  if(length(sample_permnos) == 0) next
+  if(nrow(sampled_events) == 0) next
   
-  # --- B. Prepare Data ---
-  # Filter the main daily/monthly data (Data_y) for these firms
-  plot_data <- Data_y |>
-    filter(permno %in% sample_permnos) |>
-    # Select only necessary columns to keep it light
-    select(permno, date, price, implosion_date) |>
-    mutate(label = as.character(permno))
+  # --- B. Define Zombie Rectangles (ROBUST MATCHING) ---
   
-  # --- C. Define Zombie Rectangles ---
-  # Define the 18-month shaded area starting from the Implosion Date
-  zombie_rects <- plot_data |>
-    group_by(permno) |>
-    summarise(
-      implosion_date = first(implosion_date),
-      # End date = Implosion Date + 18 Months
-      zombie_end = first(implosion_date) %m+% months(18),
-      label = first(label)
+  # 1. Ensure type consistency
+  sampled_events <- sampled_events |> mutate(permno = as.integer(permno))
+  Data_Failed_Events <- Data_Failed_Events |> mutate(permno = as.integer(permno))
+  
+  zombie_rects <- sampled_events |>
+    select(permno, start_year) |>
+    # LEFT JOIN on Permno ONLY (One-to-Many expansion)
+    left_join(Data_Failed_Events, by = "permno") |>
+    
+    # CALCULATE DISTANCE: 
+    # Assume 'event_year' represents the end of that year (Dec 31).
+    # We find the implosion date closest to that reference point.
+    mutate(
+      ref_date = make_date(start_year, 12, 31),
+      date_diff = abs(as.numeric(implosion_date - ref_date))
     ) |>
-    ungroup()
+    
+    # GROUP & SLICE: Keep only the closest event for each sampled permno/year combo
+    group_by(permno, start_year) |>
+    slice_min(date_diff, n = 1, with_ties = FALSE) |>
+    ungroup() |>
+    
+    # Construct Plotting Variables
+    mutate(
+      zombie_end = implosion_date %m+% months(18),
+      label = paste0("Permno: ", permno, "\nEvent: ", start_year)
+    ) 
+  
+  # Debug Check
+  if(nrow(zombie_rects) == 0) {
+    cat(" [Warning] No matching implosion events found (check permno overlap). Skipping.\n")
+    next
+  }
+  
+  # --- C. Prepare Price History Data ---
+  
+  target_permnos <- unique(zombie_rects$permno)
+  
+  plot_data <- Data_y |>
+    mutate(permno = as.integer(permno)) |>
+    filter(permno %in% target_permnos) |>
+    select(permno, date, price) |>
+    # Use inner_join to attach the label, ensuring we only keep relevant history
+    inner_join(zombie_rects |> select(permno, label), 
+               by = "permno", relationship = "many-to-many") |>
+    arrange(permno, date)
   
   # --- D. Generate Grid Plot ---
-  p_grid <- ggplot(plot_data, aes(x = date, y = price)) +
+  
+  p_grid <- ggplot() +
     # 1. Shaded Region (Zombie Period)
     geom_rect(data = zombie_rects,
               aes(xmin = implosion_date, xmax = zombie_end, 
                   ymin = -Inf, ymax = Inf),
-              fill = "#7b85f5", alpha = 0.5, inherit.aes = FALSE) +
+              fill = "firebrick", alpha = 0.2) +
     
     # 2. Price Line
-    geom_line(color = "#1f77b4", linewidth = 0.6) +
+    geom_line(data = plot_data, 
+              aes(x = date, y = price), 
+              color = "#2c3e50", linewidth = 0.5) +
     
-    # 3. Facets (Grid Layout)
+    # 3. Facets
     facet_wrap(~label, scales = "free", ncol = 5) +
     
     # 4. Styling
-    labs(title = paste("Outcome Category:", cat),
-         subtitle = "Blue shaded area indicates the 18-month post-implosion window",
-         x = NULL, y = NULL) +
+    scale_y_continuous(labels = scales::dollar_format()) +
+    labs(title = paste("Outcome:", cat),
+         subtitle = "Red shaded area = 18-month post-implosion window",
+         x = NULL, y = "Stock Price") +
     theme_bw() +
     theme(
-      panel.grid.major = element_blank(),
+      panel.grid.major = element_line(color = "grey92"),
       panel.grid.minor = element_blank(),
       axis.text.x = element_text(size = 6, angle = 45, hjust = 1),
       axis.text.y = element_text(size = 6),
-      strip.background = element_rect(fill = "white", color = "grey80"),
-      strip.text = element_text(size = 8, face = "bold"),
+      strip.background = element_rect(fill = "grey95"),
+      strip.text = element_text(size = 7, face = "bold"),
       plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
       plot.subtitle = element_text(hjust = 0.5, size = 10)
     )
   
   # --- E. Save Plot ---
-  # Create a clean filename (replace spaces/slashes with underscores)
   safe_filename <- str_replace_all(cat, "[^A-Za-z0-9]", "_") |>
-    str_replace_all("__+", "_") # Remove double underscores
+    str_replace_all("__+", "_") 
   
   file_path <- file.path(Charts_Directory, paste0("03_Outcome_Sample_", safe_filename, ".png"))
   
@@ -497,22 +627,18 @@ for (cat in categories) {
     filename = file_path,
     plot = p_grid,
     width = 3000, 
-    height = 2000, 
+    height = 1800, 
     units = "px", 
     dpi = 300
   )
-  
-  print(paste("Saved plot:", file_path))
 }
 
-##===================================##
-## Imbalance of the dataset.
-##===================================##
+}, error = function(e) message(e))
 
-#=========================================================================#
-# 1. Event-Level Imbalance (The "Company Count")
-#=========================================================================#
+##==== 4C - Dataset Imbalance =================================================#
 
+tryCatch({
+  
 # A. Identify the total unique companies in the dataset
 total_companies <- n_distinct(ml_panel$permno)
 
@@ -615,3 +741,9 @@ ggsave(
   dpi = 300,
   limitsize = FALSE
 )
+
+}, error = function(e) message(e))
+
+##=============================================================================#
+##=============================================================================#
+##=============================================================================#

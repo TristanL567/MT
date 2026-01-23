@@ -4,7 +4,7 @@
 
 %==== START ===================================================================%
 
-\documentclass{beamer}\usepackage[]{graphicx}\usepackage[]{xcolor}
+\documentclass[10pt]{beamer}\usepackage[]{graphicx}\usepackage[table]{xcolor}
 % maxwidth is the original width if it is less than linewidth
 % otherwise use linewidth (to make sure the graphics do not exceed the margin)
 \makeatletter
@@ -57,25 +57,66 @@
 \usepackage{alltt}
 
 % --- THEME SETUP ---
-% I replaced the custom 'ldv' theme with 'Madrid' so this compiles immediately.
-% If you have the ldv files locally, uncomment the line below and remove 'Madrid'.
-% \usetheme{ldv} 
-\usetheme{Madrid} 
-\usecolortheme{beaver} % A nice color variation
+\usetheme{Madrid}
+\usecolortheme{beaver} % Restores the Red theme
 
 % --- PACKAGES ---
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
-\usepackage{booktabs} % For professional tables
+\usepackage{booktabs}
 \usepackage{hyperref}
+\usepackage{natbib}
+\setcitestyle{authoryear,open={(},close={)}}
+\usepackage[table]{xcolor}
+
+% --- CUSTOM COLOR & FONT OVERRIDES (B) ---
+% 1. Define the specific red (Beaver default is usually dark red)
+\definecolor{beaverRed}{RGB}{140,45,45} 
+\definecolor{grey}{RGB}{197,204,211} 
+
+% 2. Force Titles to be White on Red
+\setbeamercolor{title}{bg=beaverRed, fg=white}
+\setbeamercolor{frametitle}{bg=beaverRed, fg=white}
+\setbeamercolor{subtitle}{fg=white} % Subtitle on title page
+
+% 3. Force Footer to be White on Red
+\setbeamercolor{date in head/foot}{bg=beaverRed, fg=white} 
+\setbeamercolor{footline}{bg=beaverRed, fg=white}
+
+%%%% Adjusts the text boxes (alterboxes) %%%%
+\setbeamercolor{block title alerted}{bg=beaverRed, fg=white}
+\setbeamercolor{block body alerted}{bg=grey, fg=black}
+\setbeamercolor{block title}{bg=darkgray, fg=white}
+\setbeamercolor{block body}{bg=grey, fg=black}
+
+%%%% Customizes the footline / footnoes %%%%
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+    % LEFT BOX: Date
+    \begin{beamercolorbox}[wd=6.4cm,ht=2.25ex,dp=1ex,leftskip=0.5cm]{date in head/foot}%
+      \usebeamerfont{date in head/foot}\insertdate
+    \end{beamercolorbox}%
+    % RIGHT BOX: Page Number
+    % 1. REMOVED [right] option to stop it from forcing the text to the edge.
+    % 2. ADDED \hfill to push the number to the right side.
+    % 3. ADDED \hspace*{...} to create the gap.
+    \begin{beamercolorbox}[wd=6.4cm,ht=2.25ex,dp=1ex]{date in head/foot}%
+      \usebeamerfont{date in head/foot}\hfill\insertframenumber\hspace*{0.75cm}% <--- Adjust this value
+    \end{beamercolorbox}}%
+  \vskip0pt%
+}
+
+% Remove default navigation symbols
+\setbeamertemplate{navigation symbols}{}
 
 % --- METADATA ---
-\title[Thesis Proposal]{The Agony and the...}
-\subtitle{Master Thesis Proposal}
+\title[Thesis Proposal]{The Agony and the Ecstasy} 
+\subtitle{Constructing a "Crash-Filtered" Equity Index using Machine Learning}
 \author{Tristan Leiter}
 \institute[WU]{Vienna University of Business and Economics}
-\date{\today}
+\date{January 28, 2026}
 
 %==== Beginning of the document ===============================================%
 
@@ -90,174 +131,319 @@
 \end{frame}
 
 % 2. Outline
-\begin{frame}{Agenda}
-  \tableofcontents
-\end{frame}
+% \begin{frame}{Agenda}
+%   \tableofcontents
+% \end{frame}
 
-%==== 01 - Introduction =======================================================%
+%==== 01 - Motivation =========================================================%
 
-\section{Introduction}
-\begin{frame}{Introduction}
+\begin{frame}{The "Agony and Ecstasy" of Indexing}
   \begin{itemize}
-    \item \textbf{Context:} Modern distributed systems generate massive logs.
-    \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
-    \item \textbf{Goal:} Develop a hybrid deep-learning model for real-time detection.
-  \end{itemize}
-  
-  \vspace{1em}
-  
-  \begin{alertblock}{Research Gap}
-    Existing solutions struggle with high-dimensional, unlabeled data streams.
-  \end{alertblock}
-\end{frame}
+    \setlength\itemsep{1.2em}
+    
+    \item \textbf{The Passive Investing Dilemma:} 
+    Indices capture the "Ecstasy" of extreme winners but systematically force investors to hold the "Agony" of imploding stocks.
+    \begin{itemize}
+        \item \citet{Cembalest2014} finds that equity indices are driven by a small tail of winners, while approx. 40\% of constituents suffer "catastrophic declines" ($>70\%$ drawdown) without recovery.
+    \end{itemize}
 
+    \item \citet{Tewari2024} formalize this as a \\
+    \textbf{Catastrophic Stock Implosion (CSI)} .
+    \begin{itemize}
+        \item It is a distinct event: a severe price downturn followed by a "zombie" period of prolonged stagnation.
+    \end{itemize}
+
+    \item Passive investing captures the winners, but fails to filter the "Agony" until it is too late. Standard metrics fail to distinguish between \textbf{recoverable volatility} and \textbf{terminal implosion} .
+  \end{itemize}
+\end{frame}
 
 %==== 02 - Research Question ==================================================%
 
 \section{Research Question}
 \begin{frame}{Research Question}
+
+\textbf{Main Research Question:}
+  \begin{alertblock}{}
+    To what extent does a 'Crash-Filtered' equity index, constructed via probabilistic implosion modeling, generate superior risk-adjusted returns compared to the market benchmark and traditional minimum-volatility strategies?
+  \end{alertblock}
+  
+    \vspace{1em}
+
+\textbf{Subquestions:}
+
   \begin{itemize}
-    \item \textbf{Context:} Modern distributed systems generate massive logs.
-    \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
-    \item \textbf{Goal:} Develop a hybrid deep-learning model for real-time detection.
+      \setlength\itemsep{0.3em}
+    \item Does the integration of latent features derived from Denoising Autoencoders significantly improve the predictive performance (Average Precision) of Ensemble models compared to those trained solely on raw financial data?
+    \item Do Ensemble methods exhibit a superior ability to distinguish between recoverable volatility ('Ecstasy') and terminal implosion ('Agony') compared to indiscriminate volatility-based exclusion strategies?
+    \item Does shortening the prediction horizon from 12 months to 6 months significantly enhance the index's ability to react to distress signals, or does it introduce excessive turnover without performance gains?
   \end{itemize}
   
   \vspace{1em}
-  
-  \begin{alertblock}{Research Gap}
-    Existing solutions struggle with high-dimensional, unlabeled data streams.
-  \end{alertblock}
+
 \end{frame}
 
-%==== 03 - Literature Review ==================================================%
+%==== 03 - Traditional method limitations =====================================%
 
-\section{Literature Review}
-\begin{frame}{Literature Review}
+\begin{frame}{Limits of Traditional Models}
   \begin{itemize}
-    \item \textbf{Context:} Modern distributed systems generate massive logs.
-    \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
-    \item \textbf{Goal:} Develop a hybrid deep-learning model for real-time detection.
+    \setlength\itemsep{1em}
+
+    \item \textbf{The "Quality Trap":} 
+    Perceived safety signals can be misleading. \citet{Penman2018} suggest that low B/P ratios often reflect uncertainty rather than value, while profitability measures lose predictive power over long horizons .
+
+    \item \textbf{The False Positive Dilemma:} 
+    Traditional bankruptcy models (e.g., \citet{Altman1968}) and risk scaling strategies, like Minimum-Volatility (MinVol.), fail to distinguish between 'good' volatility (growth) and 'bad' volatility (implosion), systematically excluding winners.
+
+    \item \textbf{Contribution: A "Crash-Filtered" Index} \\
+    Moving from "volatility forecasting" to "probabilistic implosion modeling":
+    \begin{enumerate}
+        \item[--] This thesis proposes a Machine-Learning model to predict the "Agony" stocks whilst preserving 
+        the "Ecstasy" candidates.
+        \item[--] The model predictions will be used to create a crash-filtered index. Its performance will be 
+        compared to the market benchmark and traditional MinVol. strategies.
+    \end{enumerate}
   \end{itemize}
-  
-  \vspace{1em}
-  
-  \begin{alertblock}{Research Gap}
-    Existing solutions struggle with high-dimensional, unlabeled data streams.
-  \end{alertblock}
 \end{frame}
 
 %==== 04 - Research Design ====================================================%
 
+%%% Slide 04A - Methodology I:  Dependent Variable %%%
+
 \section{Research Design}
-\begin{frame}{Research Design}
+\begin{frame}{Methodology I: Dependent Variable}
+    
+    \textbf{Goal:} Set up the dependent variable Catastrophic Stock Implosion (CSI)\\
+    Following \citet{Tewari2024}, a stock is classified as a CSI ($y=1$) if it satisfies:
+    \begin{itemize}
+        \item \textbf{Initial Crash (C):} $>80\%$ drawdown  from trailing peak (beginning of the "zombie" period).
+        \item \textbf{Non-Recovery:} A maximum cumulative return of -20\% in the "zombie" period.
+        \item \textbf{Zombie Period:} Duration of $1.5$ years.
+    \end{itemize}
+    
+    \citet{Tewari2024} employ a yearly prediction horizon ($h=12$ months), which this thesis follows:
+    
+    \begin{equation}
+        y_{i,t} =
+        \begin{cases}
+        1 & \text{if stock } i \text{ triggers } C = 80\% \text{ within } [t, t+h] \text{ and zombie criteria met}, \\
+        0 & \text{otherwise}
+        \end{cases}
+    \end{equation}
+
+\end{frame}
+
+%%% Slide 04A - Methodology II:  Modelling %%%
+
+\section{Research Design}
+\begin{frame}{Methodology II: Modelling}
   \begin{itemize}
-    \item \textbf{Context:} Modern distributed systems generate massive logs.
-    \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
-    \item \textbf{Goal:} Develop a hybrid deep-learning model for real-time detection.
+    \setlength\itemsep{0.8em}
+
+    \item Using an \textbf{Autoencoder} to compress the noisy financial data into latent "distress structures" that linear PCA misses.
+    \item \textbf{Supervised Learning:}
+    Training ensemble-methods (Random Forest, XGBoost, CatBoost, LightGBM) on both raw data and latent features to predict the probability of CSI.
+
   \end{itemize}
   
-  \vspace{1em}
+  \vspace{0.1em}
+
+  \textbf{Cross-Validation} optimization will be conducted via \textbf{Average Precision (AP)}.
+  Since the dataset is imbalanced, AP provides for a more robust signal for hyperparameter
+  tuning without committing to a specific decision threshold. \\
   
-  \begin{alertblock}{Research Gap}
-    Existing solutions struggle with high-dimensional, unlabeled data streams.
-  \end{alertblock}
+  \vspace{0.4em}
+
+  % \textbf{AUC-ROC} might lead to a FPR that is too high even if the Agony stocks are correctly
+  % classified. In this case, we would miss out on too many Ecstasy Stocks (e.g. NVIDIA) even though
+  % our AUC-ROC Score is high. \\
+  
+  The models will be evaluated based on \textbf{Recall at fixed FPR}. \\ 
+  A constraint-based metric aligns more closely with the practical "Risk-Budget" in Portfolio Management. 
+  The objective is to maximize the number of Agony stocks identified (Recall) whilst capping the 
+  exclusion of Ecstasy stocks.
+  
 \end{frame}
 
 
+%%% Slide 04A - Methodology III:  Index Construction %%%
+
+\section{Research Design}
+\begin{frame}{Methodology III: Index Construction}
+  
+  To ensure a proper \textbf{Out-of-Sample test}, the dataset will be split into three parts:
+  
+  \begin{itemize}
+    \item Training-Set for Cross-Validation.
+    \item Test-set for Model-selection
+    \item Out-of-Sample set for backtesting.
+  \end{itemize}
+  
+  The best-performing model will within the test-set be used to predict a CSI for the consecutive year.
+  The "Crash-Filtered" Index will be rebalanced anually at the end of each calendar year.
+  The probability threshold, $\theta$, is selected based on the desired FPR rate (for example $3\%$ or $5\%$).
+
+  \vspace{0.3em}
+
+  \begin{block}{Index Construction}
+ The "Crash-Filtered" Index systematically excludes constituents where the predicted probability $\hat{p}_{CSI} > \theta$.
+Unlike standard classifiers that use a default $\theta=0.5$, this threshold is \textbf{dynamically calibrated} to satisfy a
+specific risk constraint (e.g., $FPR \leq 5\%$), ensuring the exclusion rate aligns with the investor's "budget" for opportunity cost.
+  \end{block}
+  
+\end{frame}
 
 
+%==== 05 - Data ===============================================================%
 
+%%% Slide 05A - CRSP %%%
+\section{CRSP}
+\begin{frame}{CRSP}
 
-%==== 05 - Expected Contribution ==============================================%
+      \textbf{The Universe (CRSP)}
+      \begin{itemize}
+        \item \textbf{Scope:} US Common Equities (NYSE, AMEX, NASDAQ).
+        \item \textbf{Timeline:} 1998 - 2024.
+        \item \textbf{Size:} $3,255$ unique firms, 46,294 firm-year observations.
+        \item \textbf{Constraint:} Minimum listing lifetime of 5 years to ensure sufficient learning history 
+        (13 years on average per firm).
+        \item \textbf{CSI-Events:} $2,507$ CSIs in Total. 
+      \end{itemize}
+
+\begin{table}[!h]
+\centering
+% \caption{}
+\fontsize{7pt}{9pt}\selectfont 
+% -------------------------
+\begin{tabular}[t]{lrr}
+\toprule
+\multicolumn{1}{c}{Category} & \multicolumn{2}{c}{Cohort Distribution} \\
+\cmidrule(l{2pt}r{3pt}){2-3}
+& Imploded Firms & Never Imploded\\
+\midrule
+\cellcolor{gray!10}{High Growth ($> 10\%$)} & \cellcolor{gray!10}{12.5\%} & \cellcolor{gray!10}{42.6\%}\\
+Moderate Growth ($5 - 10\%$) & 16.4\% & 24.2\%\\
+\cellcolor{gray!10}{Low Growth ($2 - 5\%$)} & \cellcolor{gray!10}{10.1\%} & \cellcolor{gray!10}{7.7\%}\\
+Stagnation ($-2 - 2\%$) & 0.0\% & 0.1\%\\
+\cellcolor{gray!10}{Value Destruction (Intermitent Recovery)} & \cellcolor{gray!10}{48.5\%} & \cellcolor{gray!10}{16.8\%}\\
+\addlinespace
+Value Destruction (No Recovery) & 1.4\% & 1.1\%\\
+\cellcolor{gray!10}{Unclassified} & \cellcolor{gray!10}{11.1\%} & \cellcolor{gray!10}{7.6\%}\\
+\bottomrule
+\multicolumn{3}{l}{\scriptsize \textit{Note:} Categories are measured by the average geometric return.} \\
+\end{tabular}
+\end{table}
+
+\end{frame}
+
+%%% Slide 05B - Compustat %%%
+
+\section{Compustat}
+\begin{frame}{Compustat}
+
+      \textbf{Features}
+      \begin{itemize}
+        \item \textbf{Accounting:} Balance-Sheet and Income-Statement variables.
+        \item \textbf{Macro:} Variables with possible interactions with accounting variables (interest rate, others). 
+        Obtained from the FRED database.
+        \item \textbf{Other:} Specifically targeting "Zombie" precursors:
+        \begin{itemize}
+            \item \textit{Employees} (Number of employees).
+            \item \textit{Rental expenses} 
+        \end{itemize}
+      \end{itemize}
+ 
+\end{frame}
+
+%%% 05C - Feature table %%%%%%%%%%
+
+\section{Compustat}
+\begin{frame}{Compustat}
+
+\begin{table}[ht]
+\centering
+\fontsize{4pt}{5pt}\selectfont 
+% -------------------------
+% \caption{Selected Fundamental Features (Compustat)}
+\label{tab:compustat_vars}
+\scriptsize
+\begin{tabular}{llp{4cm}}
+\toprule
+\textbf{Category} & \textbf{Variable Code} & \textbf{Description} \\
+\midrule
+\textbf{Balance Sheet: Assets} 
+ & \texttt{at} / \texttt{act} & Total Assets / Total Current Assets \\
+ & \texttt{che} / \texttt{ivst} & Cash \& Short-Term Inv. / Short-Term Investments \\
+ & \texttt{rect} / \texttt{invt} & Receivables (Channel stuffing risk) / Inventories \\
+ & \texttt{wcap} & Working Capital (Liquidity buffer) \\
+ & \texttt{ppent} / \texttt{intan} & Net PP\&E / Intangibles (Soft assets) \\
+ & \texttt{gdwl} & Goodwill (Impairment risk) \\
+ & \texttt{txdba} & Deferred Tax Asset (Long Term) - \textit{Proxy for NOLs} \\
+\addlinespace
+\textbf{Balance Sheet: Liab/Eq} 
+ & \texttt{lt} / \texttt{lct} & Total Liabilities / Total Current Liabilities \\
+ & \texttt{dltt} / \texttt{dlc} & Long-Term Debt / Debt in Current Liabilities \\
+ & \texttt{dd1} & Long-Term Debt Due in 1 Year (\textit{Refinancing wall}) \\
+ & \texttt{ap} / \texttt{txp} & Accounts Payable / Income Taxes Payable \\
+ & \texttt{txditc} & Deferred Taxes \& Inv. Tax Credit (Non-current) \\
+ & \texttt{seq} / \texttt{re} & Stockholders' Equity / Retained Earnings (\textit{Accum. Deficit}) \\
+ & \texttt{pstk} / \texttt{mib} & Preferred Stock / Noncontrolling Interest \\
+ & \texttt{tstk} & Treasury Stock (Contra-equity) \\
+% \addlinespace
+% \textbf{Income Statement} 
+%  & \texttt{sale} / \texttt{gp} & Net Sales / Gross Profit \\
+%  & \texttt{cogs} / \texttt{xsga} & Cost of Goods Sold / SG\&A Expense \\
+%  & \texttt{ebit} / \texttt{oibdp} & EBIT / Operating Income Before Deprec. (\textit{EBITDA}) \\
+%  & \texttt{ni} / \texttt{pi} & Net Income / Pretax Income (\textit{Tax efficiency check}) \\
+%  & \texttt{epsfi} & Earnings Per Share (Basic) \\
+%  & \texttt{spi} & Special Items (\textit{Early warning signal}) \\
+%  & \texttt{xint} / \texttt{xinst} & Total Interest Exp. / Short-Term Interest Exp. \\
+%  & \texttt{xrd} / \texttt{xad} & R\&D Exp. / Advertising Exp. (\textit{Discretionary cuts}) \\
+%  & \texttt{xrent} & Rental Expense (Operational rigidity) \\
+%  & \texttt{dp} & Depreciation \& Amortization \\
+% \addlinespace
+% \textbf{Supplementary} 
+%  & \texttt{emp} & Number of Employees (\textit{Real economy anchor}) \\
+%  & \texttt{dpr} / \texttt{ppegt} & Accum. Depreciation / Gross PPE (\textit{Asset age ratio}) \\
+%  & \texttt{fca} & Foreign Exchange Income/Loss \\
+%  & \texttt{mkvalt} & Market Value (Fiscal Year-End) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{frame}
+
+%==== 06 - Expected Contribution ==============================================%
 
 \section{Expected Contribution}
 \begin{frame}{Expected Contribution}
+
   \begin{itemize}
-    \item \textbf{Context:} Modern distributed systems generate massive logs.
-    \item \textbf{Pain Point:} Manual analysis is error-prone and slow.
-    \item \textbf{Goal:} Develop a hybrid deep-learning model for real-time detection.
-  \end{itemize}
-  
-  \vspace{1em}
-  
-  \begin{alertblock}{Research Gap}
-    Existing solutions struggle with high-dimensional, unlabeled data streams.
-  \end{alertblock}
-\end{frame}
+    \setlength\itemsep{0.6em}
 
+        \item \textbf{Replication:} Confirming the methodology and results of the working paper by
+        \citet{Tewari2024} with the CRSP and Compustat Data.
 
-%==== 00 - OTHER ==============================================================%
+        \item \textbf{Extension:} Extending the results of \citet{Tewari2024} by including autoencoders for extraction
+        of the informational content in the features and by using the model-predictions for index-constructions.
 
-\section{Methodology}
+        \item \textbf{Challenging traditional risk-scaling approaches:} \\
+        Showing that ML-applications are better suited to distinguish between Ecstasy and Agony stocks compared to
+        classical risk-scaling methods, like Low-Volatility, Low-Beta or Altman's Z-score. Autoencoders and ensemble-methods
+        are well suited for capturing the complex interactions between accounting and macro variables.
 
-\begin{frame}{Proposed Mathematical Model}
-  We assume the state transition follows a Markov process. The posterior probability is updated as follows:
-  
-  \begin{equation}
-    p(\mathbf{x}_{k}|\mathbf{Z}_{k}) = \frac{p(\mathbf{z}_{k}|\mathbf{x}_{k})p(\mathbf{x}_{k}|\mathbf{Z}_{k-1})}{\int \! p(\mathbf{z}_{k}|\mathbf{x}_{k})p(\mathbf{x}_{k}|\mathbf{Z}_{k-1})\,d\mathbf{x}_{k}}
-  \end{equation}
-  
-  Where:
-  \begin{itemize}
-    \item $\mathbf{x}_{k}$ is the system state at time $k$
-    \item $\mathbf{Z}_{k}$ is the observation history
-  \end{itemize}
+    \end{itemize}
+
 \end{frame}
 
 %==== 00 - OTHER ==============================================================%
 
-\section{Preliminary Data}
+\begin{frame}{Bibliography}
 
-% [fragile] is MANDATORY when using R code blocks in Beamer
-\begin{frame}[fragile]{Preliminary Data Analysis (R Integration)}
-  Using R directly in slides ensures plots are always up-to-date with your data.
-  
-\begin{knitrout}
-\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
-\begin{alltt}
-\hlcom{# We can generate plots dynamically}
-\hlkwd{par}\hlstd{(}\hlkwc{mar}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{4}\hlstd{,}\hlnum{4}\hlstd{,}\hlnum{1}\hlstd{,}\hlnum{1}\hlstd{))}
-\hlkwd{plot}\hlstd{(iris}\hlopt{$}\hlstd{Sepal.Length, iris}\hlopt{$}\hlstd{Petal.Length,}
-     \hlkwc{col}\hlstd{=iris}\hlopt{$}\hlstd{Species,} \hlkwc{pch}\hlstd{=}\hlnum{19}\hlstd{,}
-     \hlkwc{main}\hlstd{=}\hlstr{"Cluster Separation Feasibility"}\hlstd{)}
-\hlkwd{legend}\hlstd{(}\hlstr{"topleft"}\hlstd{,} \hlkwc{legend}\hlstd{=}\hlkwd{levels}\hlstd{(iris}\hlopt{$}\hlstd{Species),} \hlkwc{col}\hlstd{=}\hlnum{1}\hlopt{:}\hlnum{3}\hlstd{,} \hlkwc{pch}\hlstd{=}\hlnum{19}\hlstd{,} \hlkwc{cex}\hlstd{=}\hlnum{0.8}\hlstd{)}
-\end{alltt}
-\end{kframe}
-\includegraphics[width=\maxwidth]{figure/summary_plot-1} 
-\end{knitrout}
+\bibliographystyle{plainnat}
+\bibliography{references}
+
 \end{frame}
 
-%==== 00 - OTHER ==============================================================%
-\section{Plan}
-
-\begin{frame}{Project Timeline}
-  \begin{table}[]
-    \centering
-    \begin{tabular}{ll}
-      \toprule
-      \textbf{Phase} & \textbf{Deadline} \\
-      \midrule
-      Literature Review & Month 1 \\
-      Data Collection & Month 2 \\
-      Implementation (Prototype) & Month 3-4 \\
-      Evaluation \& Tuning & Month 5 \\
-      Writing Thesis & Month 6 \\
-      \bottomrule
-    \end{tabular}
-    \caption{Estimated milestones for the 6-month period.}
-  \end{table}
-\end{frame}
-
-%==== 00 - OTHER ==============================================================%
-
-\begin{frame}{Next Steps}
-  \centering
-  \Large \textbf{Thank you for your attention.}
-  
-  \vspace{1cm}
-  
-  \normalsize
-  Questions?
-\end{frame}
+%==== END =====================================================================%
 
 \end{document}

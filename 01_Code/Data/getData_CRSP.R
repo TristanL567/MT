@@ -18,7 +18,8 @@ Directory <- file.path(here::here("")) ## You need to install the package first 
 
 packages <- c("here", "xts", "dplyr", "tidyr",
               "RPostgres", "tidyverse", "tidyfinance", "scales",
-              "RSQLite", "dbplyr", "lubridate", "data.table"
+              "RSQLite", "dbplyr", "lubridate", "data.table",
+              "slider"
 )
 
 for(i in 1:length(packages)){
@@ -312,6 +313,11 @@ saveRDS(Data_Monthly, file = Path)
 ## 5. Check for catastrophic implosions (same as the Tewari et al. Methodology)
 ##=========================================================================#
 
+Path <- file.path(Data_CRSP_Directory, "Data_Monthly.rds")
+Data_Monthly <- readRDS(Path)
+
+
+
 PARAM_C <- -0.8   # Crash threshold
 PARAM_M <- -0.2   # Recovery ceiling
 PARAM_T <- 18     # Zombie Period (months)
@@ -428,6 +434,10 @@ dt_monthly[dt_events,
 
 # Convert back to tibble/df
 Data_y <- as_tibble(dt_monthly)
+
+
+#### New methodology:
+Data_y <- Drawdown_classified
 
 ##========================##
 ## Compute the annualized returns for each firm.

@@ -69,26 +69,32 @@
 \usepackage{natbib}
 \setcitestyle{authoryear,open={(},close={)}}
 \usepackage[table]{xcolor}
+\usepackage{caption}
 
 % --- CUSTOM COLOR & FONT OVERRIDES (B) ---
 % 1. Define the specific red (Beaver default is usually dark red)
 \definecolor{beaverRed}{RGB}{140,45,45} 
-\definecolor{grey}{RGB}{197,204,211} 
+\definecolor{MainColour}{RGB}{0,72, 144} 
+\definecolor{grey}{RGB}{216,221,227} 
+\definecolor{darkgrey}{RGB}{149,153,158} 
 
 % 2. Force Titles to be White on Red
-\setbeamercolor{title}{bg=beaverRed, fg=white}
-\setbeamercolor{frametitle}{bg=beaverRed, fg=white}
+\setbeamercolor{title}{bg=MainColour, fg=white}
+\setbeamercolor{frametitle}{bg=MainColour, fg=white}
 \setbeamercolor{subtitle}{fg=white} % Subtitle on title page
 
 % 3. Force Footer to be White on Red
-\setbeamercolor{date in head/foot}{bg=beaverRed, fg=white} 
-\setbeamercolor{footline}{bg=beaverRed, fg=white}
+\setbeamercolor{date in head/foot}{bg=MainColour, fg=white} 
+\setbeamercolor{footline}{bg=MainColour, fg=white}
 
 %%%% Adjusts the text boxes (alterboxes) %%%%
-\setbeamercolor{block title alerted}{bg=beaverRed, fg=white}
+\setbeamercolor{block title alerted}{bg=MainColour, fg=white}
 \setbeamercolor{block body alerted}{bg=grey, fg=black}
-\setbeamercolor{block title}{bg=darkgray, fg=white}
+\setbeamercolor{block title}{bg=darkgrey, fg=white}
 \setbeamercolor{block body}{bg=grey, fg=black}
+
+%%%% Enable caption numbering.
+\setbeamertemplate{caption}[numbered]
 
 %%%% Customizes the footline / footnoes %%%%
 \setbeamertemplate{footline}{%
@@ -148,12 +154,12 @@
     \end{itemize}
 
     \item \citet{Tewari2024} formalize this as a \\
-    \textbf{Catastrophic Stock Implosion (CSI)} .
+    \textbf{Catastrophic Stock Implosion (CSI)}.
     \begin{itemize}
         \item It is a distinct event: a severe price downturn followed by a "zombie" period of prolonged stagnation.
     \end{itemize}
 
-    \item Passive investing captures the winners, but fails to filter the "Agony" until it is too late. Standard metrics fail to distinguish between \textbf{recoverable volatility} and \textbf{terminal implosion} .
+    \item Passive investing captures the winners, but fails to filter the "Agony" until it is too late. Standard metrics fail to distinguish between \textbf{recoverable volatility} and \textbf{terminal implosion}.
   \end{itemize}
 \end{frame}
 
@@ -189,19 +195,20 @@
     \setlength\itemsep{1em}
 
     \item \textbf{The "Quality Trap":} 
-    Perceived safety signals can be misleading. \citet{Penman2018} suggest that low B/P ratios often reflect uncertainty rather than value, while profitability measures lose predictive power over long horizons .
+    Perceived safety signals can be misleading. \citet{Penman2018} suggest that low B/P ratios often reflect uncertainty rather than value, while profitability measures lose predictive power over long horizons.
 
     \item \textbf{The False Positive Dilemma:} 
     Traditional bankruptcy models (e.g., \citet{Altman1968}) and risk scaling strategies, like Minimum-Volatility (MinVol.), fail to distinguish between 'good' volatility (growth) and 'bad' volatility (implosion), systematically excluding winners.
 
-    \item \textbf{Contribution: A "Crash-Filtered" Index} \\
-    Moving from "volatility forecasting" to "probabilistic implosion modeling":
-    \begin{enumerate}
-        \item[--] This thesis proposes a Machine-Learning model to predict the "Agony" stocks whilst preserving 
-        the "Ecstasy" candidates.
-        \item[--] The model predictions will be used to create a crash-filtered index. Its performance will be 
-        compared to the market benchmark and traditional MinVol. strategies.
-    \end{enumerate}
+    % \item \textbf{Contribution: A "Crash-Filtered" Index} \\
+    % Moving from "volatility forecasting" to "probabilistic implosion modeling":
+    % \begin{enumerate}
+    %     \item[--] This thesis proposes a Machine-Learning model to predict the "Agony" stocks whilst preserving 
+    %     the "Ecstasy" candidates.
+    %     \item[--] The model predictions will be used to create a crash-filtered index. Its performance will be 
+    %     compared to the market benchmark and traditional MinVol. strategies.
+    % \end{enumerate}
+    
   \end{itemize}
 \end{frame}
 
@@ -248,7 +255,7 @@
   \vspace{0.1em}
 
   \textbf{Cross-Validation} optimization will be conducted via \textbf{Average Precision (AP)}.
-  Since the dataset is imbalanced, AP provides for a more robust signal for hyperparameter
+  Since the dataset is imbalanced, AP provides a more robust signal for hyperparameter
   tuning without committing to a specific decision threshold. \\
   
   \vspace{0.4em}
@@ -273,14 +280,15 @@
   To ensure a proper \textbf{Out-of-Sample test}, the dataset will be split into three parts:
   
   \begin{itemize}
-    \item Training-Set for Cross-Validation.
+    \item Training-Set for Cross-Validation
     \item Test-set for Model-selection
-    \item Out-of-Sample set for backtesting.
+    \item Out-of-Sample set for backtesting
   \end{itemize}
   
-  The best-performing model will within the test-set be used to predict a CSI for the consecutive year.
-  The "Crash-Filtered" Index will be rebalanced anually at the end of each calendar year.
-  The probability threshold, $\theta$, is selected based on the desired FPR rate (for example $3\%$ or $5\%$).
+  The best-performing model within the test-set will be used to predict a CSI for each firm in the consecutive year.
+  All firms exceeding the the probability threshold, $\theta$, will be removed.
+  In this context, $\theta$ is selected based on the desired FPR rate (for example $3\%$ or $5\%$).
+  Additionally, the "Crash-Filtered" Index will be rebalanced anually at the end of each calendar year.
 
   \vspace{0.3em}
 
@@ -303,15 +311,14 @@ specific risk constraint (e.g., $FPR \leq 5\%$), ensuring the exclusion rate ali
       \begin{itemize}
         \item \textbf{Scope:} US Common Equities (NYSE, AMEX, NASDAQ).
         \item \textbf{Timeline:} 1998 - 2024.
-        \item \textbf{Size:} $3,255$ unique firms, 46,294 firm-year observations.
+        \item \textbf{Size:} $3,263$ unique firms, 51,773 firm-year observations.
         \item \textbf{Constraint:} Minimum listing lifetime of 5 years to ensure sufficient learning history 
         (13 years on average per firm).
-        \item \textbf{CSI-Events:} $2,507$ CSIs in Total. 
+        \item \textbf{CSI-Events:} $2,236$ CSIs in Total. 
       \end{itemize}
 
 \begin{table}[!h]
 \centering
-% \caption{}
 \fontsize{7pt}{9pt}\selectfont 
 % -------------------------
 \begin{tabular}[t]{lrr}
@@ -320,17 +327,21 @@ specific risk constraint (e.g., $FPR \leq 5\%$), ensuring the exclusion rate ali
 \cmidrule(l{2pt}r{3pt}){2-3}
 & Imploded Firms & Never Imploded\\
 \midrule
-\cellcolor{gray!10}{High Growth ($> 10\%$)} & \cellcolor{gray!10}{12.5\%} & \cellcolor{gray!10}{42.6\%}\\
-Moderate Growth ($5 - 10\%$) & 16.4\% & 24.2\%\\
-\cellcolor{gray!10}{Low Growth ($2 - 5\%$)} & \cellcolor{gray!10}{10.1\%} & \cellcolor{gray!10}{7.7\%}\\
+\cellcolor{gray!10}{High Growth ($> 10\%$)} & \cellcolor{gray!10}{4.9\%} & \cellcolor{gray!10}{40.5\%}\\
+Moderate Growth ($5 - 10\%$) & 9.1\% & 25.9\%\\
+\cellcolor{gray!10}{Low Growth ($2 - 5\%$)} & \cellcolor{gray!10}{8.2\%} & \cellcolor{gray!10}{9.0\%}\\
 Stagnation ($-2 - 2\%$) & 0.0\% & 0.1\%\\
-\cellcolor{gray!10}{Value Destruction (Intermitent Recovery)} & \cellcolor{gray!10}{48.5\%} & \cellcolor{gray!10}{16.8\%}\\
+\cellcolor{gray!10}{Value Destruction (temp. Recovery)} & \cellcolor{gray!10}{64.8\%} & \cellcolor{gray!10}{15.4\%}\\
 \addlinespace
-Value Destruction (No Recovery) & 1.4\% & 1.1\%\\
-\cellcolor{gray!10}{Unclassified} & \cellcolor{gray!10}{11.1\%} & \cellcolor{gray!10}{7.6\%}\\
+Value Destruction (No Recovery) & 2.2\% & 0.8\%\\
+\cellcolor{gray!10}{Unknown} & \cellcolor{gray!10}{10.8\%} & \cellcolor{gray!10}{8.4\%}\\
 \bottomrule
 \multicolumn{3}{l}{\scriptsize \textit{Note:} Categories are measured by the average geometric return.} \\
 \end{tabular}
+% --------------------------
+\captionsetup{font=tiny}
+\caption{Categorization of CSI events dependent on event type.}
+% --------------------------
 \end{table}
 
 \end{frame}
@@ -361,7 +372,7 @@ Value Destruction (No Recovery) & 1.4\% & 1.1\%\\
 
 \begin{table}[ht]
 \centering
-\fontsize{4pt}{5pt}\selectfont 
+\fontsize{3pt}{4pt}\selectfont 
 % -------------------------
 % \caption{Selected Fundamental Features (Compustat)}
 \label{tab:compustat_vars}
@@ -387,7 +398,7 @@ Value Destruction (No Recovery) & 1.4\% & 1.1\%\\
  & \texttt{txditc} & Deferred Taxes \& Inv. Tax Credit (Non-current) \\
  & \texttt{seq} / \texttt{re} & Stockholders' Equity / Retained Earnings (\textit{Accum. Deficit}) \\
  & \texttt{pstk} / \texttt{mib} & Preferred Stock / Noncontrolling Interest \\
- & \texttt{tstk} & Treasury Stock (Contra-equity) \\
+ % & \texttt{tstk} & Treasury Stock (Contra-equity) \\
 % \addlinespace
 % \textbf{Income Statement} 
 %  & \texttt{sale} / \texttt{gp} & Net Sales / Gross Profit \\
@@ -408,6 +419,10 @@ Value Destruction (No Recovery) & 1.4\% & 1.1\%\\
 %  & \texttt{mkvalt} & Market Value (Fiscal Year-End) \\
 \bottomrule
 \end{tabular}
+% --------------------------
+\captionsetup{font=tiny}
+\caption{Partial table of accounting variables.}
+% --------------------------
 \end{table}
 
 \end{frame}
@@ -434,6 +449,79 @@ Value Destruction (No Recovery) & 1.4\% & 1.1\%\\
     \end{itemize}
 
 \end{frame}
+
+%==== 07 - Appendix ===========================================================%
+
+%%% Slide 07A - Implosion Count per Number of CSI-events per event type %%%
+\section{Appendix}
+\begin{frame}{Appendix: Number of CSIs per Type}
+
+\begin{table}[!h]
+\centering
+% \caption{Distribution of Catastrophic Stock Implosion (CSI) Events per Firm}
+\centering
+\begin{tabular}[t]{crr}
+\toprule
+Total CSI Events & Number of Firms & Percentage (\%)\\
+\midrule
+\cellcolor{gray!10}{0} & \cellcolor{gray!10}{2167} & \cellcolor{gray!10}{66.41}\\
+1 & 537 & 16.46\\
+\cellcolor{gray!10}{2} & \cellcolor{gray!10}{255} & \cellcolor{gray!10}{7.81}\\
+3 & 135 & 4.14\\
+\cellcolor{gray!10}{4} & \cellcolor{gray!10}{93} & \cellcolor{gray!10}{2.85}\\
+\addlinespace
+5 & 51 & 1.56\\
+\cellcolor{gray!10}{6} & \cellcolor{gray!10}{18} & \cellcolor{gray!10}{0.55}\\
+7 & 7 & 0.21\\
+\bottomrule
+\end{tabular}
+% --------------------------
+\captionsetup{font=tiny}
+\caption{Number of observations per CSI count.}
+% --------------------------
+\end{table}
+
+\end{frame}
+
+%%% Slide 07B - Implosion Count per Number of CSI-events per year%%%
+\section{Appendix}
+\begin{frame}{Appendix: Number of CSIs per Year}
+
+\begin{table}[!h]
+\centering
+% \caption{Temporal Distribution of CSI Active Years (Split View)}
+\centering
+\begin{tabular}[t]{crrcrr}
+\toprule
+\multicolumn{3}{c}{} & \multicolumn{3}{c}{} \\
+\cmidrule(l{3pt}r{3pt}){1-3} \cmidrule(l{3pt}r{3pt}){4-6}
+Year & Events & \% & Year & Events & \%\\
+\midrule
+\cellcolor{gray!10}{1998} & \cellcolor{gray!10}{83} & \cellcolor{gray!10}{3.71} & \cellcolor{gray!10}{2011} & \cellcolor{gray!10}{36} & \cellcolor{gray!10}{1.61}\\
+1999 & 56 & 2.50 & 2012 & 80 & 3.58\\
+\cellcolor{gray!10}{2000} & \cellcolor{gray!10}{124} & \cellcolor{gray!10}{5.55} & \cellcolor{gray!10}{2013} & \cellcolor{gray!10}{86} & \cellcolor{gray!10}{3.85}\\
+2001 & 16 & 0.72 & 2014 & 81 & 3.62\\
+\cellcolor{gray!10}{2002} & \cellcolor{gray!10}{57} & \cellcolor{gray!10}{2.55} & \cellcolor{gray!10}{2015} & \cellcolor{gray!10}{95} & \cellcolor{gray!10}{4.25}\\
+\addlinespace
+2003 & 44 & 1.97 & 2016 & 134 & 5.99\\
+\cellcolor{gray!10}{2004} & \cellcolor{gray!10}{22} & \cellcolor{gray!10}{0.98} & \cellcolor{gray!10}{2017} & \cellcolor{gray!10}{155} & \cellcolor{gray!10}{6.93}\\
+2005 & 60 & 2.68 & 2018 & 56 & 2.50\\
+\cellcolor{gray!10}{2006} & \cellcolor{gray!10}{69} & \cellcolor{gray!10}{3.09} & \cellcolor{gray!10}{2019} & \cellcolor{gray!10}{185} & \cellcolor{gray!10}{8.27}\\
+2007 & 68 & 3.04 & 2020 & 182 & 8.14\\
+\addlinespace
+\cellcolor{gray!10}{2008} & \cellcolor{gray!10}{55} & \cellcolor{gray!10}{2.46} & \cellcolor{gray!10}{2021} & \cellcolor{gray!10}{211} & \cellcolor{gray!10}{9.44}\\
+2009 & 114 & 5.10 & 2022 & 97 & 4.34\\
+\cellcolor{gray!10}{2010} & \cellcolor{gray!10}{70} & \cellcolor{gray!10}{3.13} & \cellcolor{gray!10}{NA} & \cellcolor{gray!10}{NA} & \cellcolor{gray!10}{NA}\\
+\bottomrule
+\end{tabular}
+% --------------------------
+\captionsetup{font=tiny}
+\caption{Number of CSI events per year.}
+% --------------------------
+\end{table}
+
+\end{frame}
+
 
 %==== 00 - OTHER ==============================================================%
 

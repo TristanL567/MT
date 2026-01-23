@@ -235,13 +235,15 @@ Based on the identified problem that standard metrics fail to distinguish betwee
 
 \section{Main Research Question}
 
-\textit{To what extent does a 'Crash-Filtered' equity index, constructed using a hybrid of Autoencoder-based feature extraction and Gradient Boosting Ensembles, generate superior risk-adjusted returns compared to traditional volatility-weighted strategies?}
+\textit{To what extent does a 'Crash-Filtered' equity index, constructed via probabilistic implosion modeling, generate superior risk-adjusted returns compared to the market benchmark and traditional minimum-volatility strategies?}
+
+% Volatility Consideration: You are correct—MinVol strategies do not explicitly claim high-volatility stocks will implode; they claim they are inefficient (the Low-Volatility Anomaly). Your thesis challenges this by arguing that indiscriminate volatility filtering is "dumb" because it cuts winners ("Ecstasy"). Comparing against MinVol is valid because you are testing if Smart Filtering (CSI) beats Indiscriminate Filtering (Variance).
 
 \subsection{Sub-Question 1: Autoencoder}
 
 Standard ratios (like P/E) are too noisy, but an Autoencoder can find the "hidden" structure of a failing firm.\\
 
-\textit{Does the integration of latent features derived from Autoencoders significantly improve the predictive accuracy (AUC-ROC) of Gradient Boosting models compared to using raw financial ratios alone?} \\
+\textit{Does the integration of latent features derived from Denoising Autoencoders significantly improve the predictive performance (Average Precision) of Ensemble models compared to those trained solely on raw financial data?} \\
 
 \textit{Hypothesis:} Autoencoders will successfully denoise volatile market indicators, allowing the Ensemble model to identify "structural" distress earlier than models relying on raw accounting inputs.
 
@@ -249,15 +251,15 @@ Standard ratios (like P/E) are too noisy, but an Autoencoder can find the "hidde
 
 Showing that decision trees (handling the non-linearities) are better than the linear Altman Z-Score at saving the "Ecstasy" stocks. \\
 
-\textit{Do Ensemble methods (e.g., CatBoost, XGBoost) exhibit a statistically lower Type I error rate (False Positives) than linear discriminant models (Altman Z-Score) when classifying high-volatility growth stocks?} \\ 
+\textit{Do Ensemble methods exhibit a superior ability to distinguish between recoverable volatility ('Ecstasy') and terminal implosion ('Agony') compared to indiscriminate volatility-based exclusion strategies?} \\ 
 
 \textit{Hypothesis:} Ensemble models will distinguish between 'good' volatility (growth) and 'bad' volatility (implosion) more effectively than linear models, thereby reducing the exclusion of high-performing winners.
 
-\subsection{Sub-Question 3: The "Tail-Risk" Advantage}
+\subsection{Sub-Question 3: Sensitivity}
 
-\textit{Can a portfolio filtered by this hybrid ML-probability score deliver superior downside protection (lower Maximum Drawdown) than a Minimum Volatility benchmark, without sacrificing the upside participation of a market-cap weighted index?} \\ 
+\textit{Does shortening the prediction horizon from 12 months to 6 months significantly enhance the index's ability to react to distress signals, or does it introduce excessive turnover without performance gains?} \\ 
 
-\textit{Hypothesis:} The Hybrid-Filtered Index will decouple downside risk from upside potential, generating alpha specifically through the avoidance of Catastrophic Stock Implosions.
+\textit{Prediction Horizon:} Reacting faster to changes.
 
 %==== Chapter 3: Research Design ==============================================%
 
@@ -367,11 +369,11 @@ Showing that decision trees (handling the non-linearities) are better than the l
 \cmidrule(l{3pt}r{3pt}){2-3}
 Growth\_Category & Imploded Firms & Never Imploded\\
 \midrule
-\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{12.5\%} & \cellcolor{gray!10}{42.6\%}\\
-Moderate Growth (5-10\%) & 16.4\% & 24.2\%\\
-\cellcolor{gray!10}{Low Growth (0-5\%)} & \cellcolor{gray!10}{15.8\%} & \cellcolor{gray!10}{12.2\%}\\
-Low Losses (0 to -5\%) & 13.0\% & 5.7\%\\
-\cellcolor{gray!10}{High Losses (<-5\%)} & \cellcolor{gray!10}{42.4\%} & \cellcolor{gray!10}{15.4\%}\\
+\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{4.9\%} & \cellcolor{gray!10}{40.5\%}\\
+Moderate Growth (5-10\%) & 9.1\% & 25.9\%\\
+\cellcolor{gray!10}{Low Growth (0-5\%)} & \cellcolor{gray!10}{13.8\%} & \cellcolor{gray!10}{13.7\%}\\
+Low Losses (0 to -5\%) & 13.0\% & 7.0\%\\
+\cellcolor{gray!10}{High Losses (<-5\%)} & \cellcolor{gray!10}{59.1\%} & \cellcolor{gray!10}{12.9\%}\\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -388,11 +390,11 @@ Low Losses (0 to -5\%) & 13.0\% & 5.7\%\\
 \cmidrule(l{3pt}r{3pt}){2-9}
 Growth\_Category & Events: 0 & Events: 1 & Events: 2 & Events: 3 & Events: 4 & Events: 5 & Events: 6 & Events: 7\\
 \midrule
-\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{42.6\%} & \cellcolor{gray!10}{16.4\%} & \cellcolor{gray!10}{8.6\%} & \cellcolor{gray!10}{6.0\%} & \cellcolor{gray!10}{2.6\%} & \cellcolor{gray!10}{0.0\%} & \cellcolor{gray!10}{0.0\%} & \cellcolor{gray!10}{0.0\%}\\
-Moderate Growth (5-10\%) & 24.2\% & 17.3\% & 14.8\% & 18.5\% & 10.5\% & 7.1\% & 0.0\% & 0.0\%\\
-\cellcolor{gray!10}{Low Growth (0-5\%)} & \cellcolor{gray!10}{12.2\%} & \cellcolor{gray!10}{13.4\%} & \cellcolor{gray!10}{15.4\%} & \cellcolor{gray!10}{25.2\%} & \cellcolor{gray!10}{31.6\%} & \cellcolor{gray!10}{28.6\%} & \cellcolor{gray!10}{33.3\%} & \cellcolor{gray!10}{0.0\%}\\
-High Losses (<-5\%) & 15.4\% & 44.4\% & 44.5\% & 30.5\% & 34.2\% & 7.1\% & 0.0\% & 0.0\%\\
-\cellcolor{gray!10}{Low Losses (0 to -5\%)} & \cellcolor{gray!10}{5.7\%} & \cellcolor{gray!10}{8.5\%} & \cellcolor{gray!10}{16.7\%} & \cellcolor{gray!10}{19.9\%} & \cellcolor{gray!10}{21.1\%} & \cellcolor{gray!10}{57.1\%} & \cellcolor{gray!10}{66.7\%} & \cellcolor{gray!10}{100.0\%}\\
+\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{40.5\%} & \cellcolor{gray!10}{7.4\%} & \cellcolor{gray!10}{3.1\%} & \cellcolor{gray!10}{3.0\%} & \cellcolor{gray!10}{1.1\%} & \cellcolor{gray!10}{0.0\%} & \cellcolor{gray!10}{5.6\%} & \cellcolor{gray!10}{0.0\%}\\
+Moderate Growth (5-10\%) & 25.9\% & 10.8\% & 8.6\% & 7.4\% & 9.7\% & 2.0\% & 0.0\% & 0.0\%\\
+\cellcolor{gray!10}{Low Growth (0-5\%)} & \cellcolor{gray!10}{13.7\%} & \cellcolor{gray!10}{13.6\%} & \cellcolor{gray!10}{16.5\%} & \cellcolor{gray!10}{11.9\%} & \cellcolor{gray!10}{14.0\%} & \cellcolor{gray!10}{9.8\%} & \cellcolor{gray!10}{11.1\%} & \cellcolor{gray!10}{0.0\%}\\
+Low Losses (0 to -5\%) & 7.0\% & 10.1\% & 12.5\% & 19.3\% & 19.4\% & 15.7\% & 22.2\% & 14.3\%\\
+\cellcolor{gray!10}{High Losses (<-5\%)} & \cellcolor{gray!10}{12.9\%} & \cellcolor{gray!10}{58.1\%} & \cellcolor{gray!10}{59.2\%} & \cellcolor{gray!10}{58.5\%} & \cellcolor{gray!10}{55.9\%} & \cellcolor{gray!10}{72.5\%} & \cellcolor{gray!10}{61.1\%} & \cellcolor{gray!10}{85.7\%}\\
 \bottomrule
 \end{tabular}}
 \end{table}
@@ -400,23 +402,25 @@ High Losses (<-5\%) & 15.4\% & 44.4\% & 44.5\% & 30.5\% & 34.2\% & 7.1\% & 0.0\%
 %% Table 3: Split of firms (implosion vs non implosion) by geometric return and min/max annual return.
 \begin{table}[!h]
 \centering
-\caption{Long-Term Growth Distribution: Imploded vs. Non-Imploded Firms}
-\centering
+% \caption{}
+\fontsize{7pt}{9pt}\selectfont 
+% -------------------------
 \begin{tabular}[t]{lrr}
 \toprule
-\multicolumn{1}{c}{ } & \multicolumn{2}{c}{Cohort Distribution} \\
-\cmidrule(l{3pt}r{3pt}){2-3}
-Growth\_Category & Imploded Firms & Never Imploded\\
+\multicolumn{1}{c}{Category} & \multicolumn{2}{c}{Cohort Distribution} \\
+\cmidrule(l{2pt}r{3pt}){2-3}
+& Imploded Firms & Never Imploded\\
 \midrule
-\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{12.5\%} & \cellcolor{gray!10}{42.6\%}\\
-Moderate Growth (5-10\%) & 16.4\% & 24.2\%\\
-\cellcolor{gray!10}{Low Growth (2-5\%)} & \cellcolor{gray!10}{10.1\%} & \cellcolor{gray!10}{7.7\%}\\
+\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{4.9\%} & \cellcolor{gray!10}{40.5\%}\\
+Moderate Growth (5-10\%) & 9.1\% & 25.9\%\\
+\cellcolor{gray!10}{Low Growth (2-5\%)} & \cellcolor{gray!10}{8.2\%} & \cellcolor{gray!10}{9.0\%}\\
 Stagnation (-2-2\%) & 0.0\% & 0.1\%\\
-\cellcolor{gray!10}{Value Destruction (<-2\%)} & \cellcolor{gray!10}{48.5\%} & \cellcolor{gray!10}{16.8\%}\\
+\cellcolor{gray!10}{Value Destruction (<-2\%)} & \cellcolor{gray!10}{64.8\%} & \cellcolor{gray!10}{15.4\%}\\
 \addlinespace
-Value Destruction (No Recovery) & 1.4\% & 1.1\%\\
-\cellcolor{gray!10}{Unknown} & \cellcolor{gray!10}{11.1\%} & \cellcolor{gray!10}{7.6\%}\\
+Value Destruction (No Recovery) & 2.2\% & 0.8\%\\
+\cellcolor{gray!10}{Unknown} & \cellcolor{gray!10}{10.8\%} & \cellcolor{gray!10}{8.4\%}\\
 \bottomrule
+\multicolumn{3}{l}{\scriptsize \textit{Note:} Categories are measured by the average geometric return.} \\
 \end{tabular}
 \end{table}
 
@@ -432,14 +436,14 @@ Value Destruction (No Recovery) & 1.4\% & 1.1\%\\
 \cmidrule(l{3pt}r{3pt}){2-9}
 Growth\_Category & Events: 0 & Events: 1 & Events: 2 & Events: 3 & Events: 4 & Events: 5 & Events: 6 & Events: 7\\
 \midrule
-\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{42.6\%} & \cellcolor{gray!10}{16.4\%} & \cellcolor{gray!10}{8.6\%} & \cellcolor{gray!10}{6.0\%} & \cellcolor{gray!10}{2.6\%} & \cellcolor{gray!10}{0.0\%} & \cellcolor{gray!10}{0.0\%} & \cellcolor{gray!10}{0.0\%}\\
-Moderate Growth (5-10\%) & 24.2\% & 17.3\% & 14.8\% & 18.5\% & 10.5\% & 7.1\% & 0.0\% & 0.0\%\\
-\cellcolor{gray!10}{Low Growth (2-5\%)} & \cellcolor{gray!10}{7.7\%} & \cellcolor{gray!10}{8.5\%} & \cellcolor{gray!10}{10.3\%} & \cellcolor{gray!10}{15.9\%} & \cellcolor{gray!10}{18.4\%} & \cellcolor{gray!10}{14.3\%} & \cellcolor{gray!10}{33.3\%} & \cellcolor{gray!10}{0.0\%}\\
+\cellcolor{gray!10}{High Growth (>10\%)} & \cellcolor{gray!10}{40.5\%} & \cellcolor{gray!10}{7.4\%} & \cellcolor{gray!10}{3.1\%} & \cellcolor{gray!10}{3.0\%} & \cellcolor{gray!10}{1.1\%} & \cellcolor{gray!10}{0.0\%} & \cellcolor{gray!10}{5.6\%} & \cellcolor{gray!10}{0.0\%}\\
+Moderate Growth (5-10\%) & 25.9\% & 10.8\% & 8.6\% & 7.4\% & 9.7\% & 2.0\% & 0.0\% & 0.0\%\\
+\cellcolor{gray!10}{Low Growth (2-5\%)} & \cellcolor{gray!10}{9.0\%} & \cellcolor{gray!10}{8.4\%} & \cellcolor{gray!10}{8.6\%} & \cellcolor{gray!10}{8.1\%} & \cellcolor{gray!10}{8.6\%} & \cellcolor{gray!10}{3.9\%} & \cellcolor{gray!10}{11.1\%} & \cellcolor{gray!10}{0.0\%}\\
 Stagnation (-2-2\%) & 0.1\% & 0.0\% & 0.0\% & 0.0\% & 0.0\% & 0.0\% & 0.0\% & 0.0\%\\
-\cellcolor{gray!10}{Value Destruction (<-2\%)} & \cellcolor{gray!10}{16.8\%} & \cellcolor{gray!10}{47.7\%} & \cellcolor{gray!10}{53.1\%} & \cellcolor{gray!10}{41.1\%} & \cellcolor{gray!10}{50.0\%} & \cellcolor{gray!10}{35.7\%} & \cellcolor{gray!10}{33.3\%} & \cellcolor{gray!10}{0.0\%}\\
+\cellcolor{gray!10}{Value Destruction (<-2\%)} & \cellcolor{gray!10}{15.4\%} & \cellcolor{gray!10}{60.3\%} & \cellcolor{gray!10}{65.9\%} & \cellcolor{gray!10}{68.9\%} & \cellcolor{gray!10}{66.7\%} & \cellcolor{gray!10}{86.3\%} & \cellcolor{gray!10}{72.2\%} & \cellcolor{gray!10}{85.7\%}\\
 \addlinespace
-Value Destruction (No Recovery) & 1.1\% & 1.9\% & 1.1\% & 0.0\% & 0.0\% & 0.0\% & 0.0\% & 0.0\%\\
-\cellcolor{gray!10}{Unknown} & \cellcolor{gray!10}{7.6\%} & \cellcolor{gray!10}{8.2\%} & \cellcolor{gray!10}{12.2\%} & \cellcolor{gray!10}{18.5\%} & \cellcolor{gray!10}{18.4\%} & \cellcolor{gray!10}{42.9\%} & \cellcolor{gray!10}{33.3\%} & \cellcolor{gray!10}{100.0\%}\\
+Value Destruction (No Recovery) & 0.8\% & 3.5\% & 2.0\% & 0.0\% & 0.0\% & 0.0\% & 0.0\% & 0.0\%\\
+\cellcolor{gray!10}{Unknown} & \cellcolor{gray!10}{8.4\%} & \cellcolor{gray!10}{9.5\%} & \cellcolor{gray!10}{11.8\%} & \cellcolor{gray!10}{12.6\%} & \cellcolor{gray!10}{14.0\%} & \cellcolor{gray!10}{7.8\%} & \cellcolor{gray!10}{11.1\%} & \cellcolor{gray!10}{14.3\%}\\
 \bottomrule
 \end{tabular}}
 \end{table}
@@ -494,18 +498,21 @@ The study utilizes the Center for Research in Security Prices (CRSP) database, s
 
 The final dataset spans from January 1960 to December 2024, comprising 1,064,324 firm-month observations across 3,629 unique equity issuers (Table \ref{tab:agg_stats}).
 
-\begin{table}[ht]
+\begin{table}[!h]
 \centering
 \caption{Aggregate Sample Statistics}
-\label{tab:agg_stats}
-\begin{tabular}{lr}
+\centering
+\begin{tabular}[t]{lr}
 \toprule
-Statistic & Value \\
+Statistic & Value\\
 \midrule
-Total Unique Firms (N) & 3,629 \\
-Total Firm-Month Observations & 1,064,324 \\
-Average Months per Firm & 293 \\
-Sample Period & 1960-01-31 to 2024-12-31 \\
+Total Unique Firms (N) & 3,263\\
+Total Observations & 51,773\\
+Average Years per Firm & 14\\
+Sample Start Date & 1998-12-31\\
+Sample End Date & 2024-12-31\\
+\addlinespace
+Total Identified Implosions & 2,236\\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -649,8 +656,6 @@ The feature set is organized into three primary categories: Balance Sheet Struct
 \section{Dataset}
 \subsection{Sample Statistic}
 
-%% 1547 firms implode atleast once.
-
 \begin{table}[!h]
 \centering
 \caption{Aggregate Sample Statistics}
@@ -659,13 +664,75 @@ The feature set is organized into three primary categories: Balance Sheet Struct
 \toprule
 Statistic & Value\\
 \midrule
-Total Unique Firms (N) & 3,255\\
-Total Observations & 46,294\\
-Average Years per Firm & 13\\
+Total Unique Firms (N) & 3,263\\
+Total Observations & 51,773\\
+Average Years per Firm & 14\\
 Sample Start Date & 1998-12-31\\
 Sample End Date & 2024-12-31\\
 \addlinespace
-Total Identified Implosions & 2,507\\
+Total Identified Implosions & 2,236\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[!h]
+\centering
+\caption{Distribution of Catastrophic Stock Implosion (CSI) Events per Firm}
+\centering
+\begin{tabular}[t]{crr}
+\toprule
+Total CSI Events & Number of Firms & Percentage (\%)\\
+\midrule
+\cellcolor{gray!10}{0} & \cellcolor{gray!10}{2167} & \cellcolor{gray!10}{66.41}\\
+1 & 537 & 16.46\\
+\cellcolor{gray!10}{2} & \cellcolor{gray!10}{255} & \cellcolor{gray!10}{7.81}\\
+3 & 135 & 4.14\\
+\cellcolor{gray!10}{4} & \cellcolor{gray!10}{93} & \cellcolor{gray!10}{2.85}\\
+\addlinespace
+5 & 51 & 1.56\\
+\cellcolor{gray!10}{6} & \cellcolor{gray!10}{18} & \cellcolor{gray!10}{0.55}\\
+7 & 7 & 0.21\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[!h]
+\centering
+\caption{Temporal Distribution of Catastrophic Stock Implosions (Target Variable y)}
+\centering
+\begin{tabular}[t]{crr}
+\toprule
+Year & Total Events & Percentage (\%)\\
+\midrule
+\cellcolor{gray!10}{1998} & \cellcolor{gray!10}{83} & \cellcolor{gray!10}{3.71}\\
+1999 & 56 & 2.50\\
+\cellcolor{gray!10}{2000} & \cellcolor{gray!10}{124} & \cellcolor{gray!10}{5.55}\\
+2001 & 16 & 0.72\\
+\cellcolor{gray!10}{2002} & \cellcolor{gray!10}{57} & \cellcolor{gray!10}{2.55}\\
+\addlinespace
+2003 & 44 & 1.97\\
+\cellcolor{gray!10}{2004} & \cellcolor{gray!10}{22} & \cellcolor{gray!10}{0.98}\\
+2005 & 60 & 2.68\\
+\cellcolor{gray!10}{2006} & \cellcolor{gray!10}{69} & \cellcolor{gray!10}{3.09}\\
+2007 & 68 & 3.04\\
+\addlinespace
+\cellcolor{gray!10}{2008} & \cellcolor{gray!10}{55} & \cellcolor{gray!10}{2.46}\\
+2009 & 114 & 5.10\\
+\cellcolor{gray!10}{2010} & \cellcolor{gray!10}{70} & \cellcolor{gray!10}{3.13}\\
+2011 & 36 & 1.61\\
+\cellcolor{gray!10}{2012} & \cellcolor{gray!10}{80} & \cellcolor{gray!10}{3.58}\\
+\addlinespace
+2013 & 86 & 3.85\\
+\cellcolor{gray!10}{2014} & \cellcolor{gray!10}{81} & \cellcolor{gray!10}{3.62}\\
+2015 & 95 & 4.25\\
+\cellcolor{gray!10}{2016} & \cellcolor{gray!10}{134} & \cellcolor{gray!10}{5.99}\\
+2017 & 155 & 6.93\\
+\addlinespace
+\cellcolor{gray!10}{2018} & \cellcolor{gray!10}{56} & \cellcolor{gray!10}{2.50}\\
+2019 & 185 & 8.27\\
+\cellcolor{gray!10}{2020} & \cellcolor{gray!10}{182} & \cellcolor{gray!10}{8.14}\\
+2021 & 211 & 9.44\\
+\cellcolor{gray!10}{2022} & \cellcolor{gray!10}{97} & \cellcolor{gray!10}{4.34}\\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -728,7 +795,7 @@ Consequently, this thesis adopts a two-staged evaluation strategy:
     During the cross-validation and training phase, we optimize for the Area Under the Precision-Recall Curve (AUC-PR/AP). Unlike the Receiver Operating Characteristic (ROC), AP focuses exclusively on the performance of the minority class (Catastrophic Stock Implosion). Since the dataset is highly imbalanced ($\approx 5\%$ prevalence), AP provides a more robust signal for tuning hyperparameters (e.g., tree depth, learning rate) without committing to a specific decision threshold, ensuring the model effectively ranks distress probabilities.
 
     \item \textbf{Final Model Selection: Recall at Fixed FPR.} 
-    For the final economic evaluation, we transition to a constraint-based metric: \textbf{Recall at Fixed False Positive Rate (FPR)}. This metric aligns directly with the practical "Risk Budget" of a portfolio manager. By fixing the FPR at conservative levels (e.g., $3\%$, $5\%$, or $10\%$), we effectively set a "budget" for mistakenly excluding healthy firms. The objective is to maximize the number of "Agony" stocks identified (Recall) while strictly capping the exclusion of potential "Ecstasy" winners (FPR)]. This approach empirically tests whether the model can decouple tail-risk protection from upside participation, a key limitation of traditional Minimum Volatility strategies.
+    For the final economic evaluation, we transition to a constraint-based metric: \textbf{Recall at Fixed False Positive Rate (FPR)}. This metric aligns directly with the practical "Risk Budget" of a portfolio manager. By fixing the FPR at conservative levels (e.g., $3\%$, $5\%$, or $10\%$), we effectively set a "budget" for mistakenly excluding healthy firms. The objective is to maximize the number of "Agony" stocks identified (Recall) while strictly capping the exclusion of potential "Ecstasy" winners (FPR). This approach empirically tests whether the model can decouple tail-risk protection from upside participation, a key limitation of traditional Minimum Volatility strategies.
 \end{enumerate}
 
 %======= Section 2: The AUC Trap ===========%

@@ -178,7 +178,87 @@ kbl(table_naics, format = "latex", booktabs = TRUE,
 
 tryCatch({
   
+##===============================##
+## Create a tibble with 1 obs for each firm.
+##===============================##
+  
+CSI_Stats <- Dataset |>
+    group_by(permno) |>
+    summarise(csi_events_total = sum(y, na.rm = TRUE), .groups = "drop")
 
+##===============================##
+## Count how many times a firm enters a CSI event.
+##===============================##
+
+CSI_Distribution <- CSI_Stats |>
+  count(csi_events_total, name = "number_of_firms")
+
+CSI_Table_Data <- CSI_Distribution |>
+  mutate(
+    Percentage = number_of_firms / sum(number_of_firms) * 100
+  )
+
+kbl(CSI_Table_Data, 
+    format = "latex", 
+    booktabs = TRUE, 
+    digits = 2, # Round percentages to 2 decimal places
+    caption = "Distribution of Catastrophic Stock Implosion (CSI) Events per Firm",
+    col.names = c("Total CSI Events", "Number of Firms", "Percentage (%)"),
+    align = c("c", "r", "r")) |> # Center first col, right align numbers
+  kable_styling(latex_options = c("hold_position", "striped"))
+
+##===============================##
+## Count the number of CSI events per year.
+##===============================##
+
+CSI_Yearly_Stats <- Dataset |>
+  filter(y == 1) |>
+  count(pred_year, name = "number_of_events") |>
+  complete(pred_year = full_seq(pred_year, 1), fill = list(number_of_events = 0)) |>
+  mutate(
+    Percentage = number_of_events / sum(number_of_events) * 100
+  )
+
+kbl(CSI_Yearly_Stats, 
+    format = "latex", 
+    booktabs = TRUE, 
+    digits = 2, 
+    caption = "Temporal Distribution of Catastrophic Stock Implosions (Target Variable y)",
+    col.names = c("Year", "Total Events", "Percentage (%)"),
+    align = c("c", "r", "r")) |>
+  kable_styling(latex_options = c("hold_position", "striped"))
+
+##===============================##
+## Count the number of CSI events per year (second table).
+##===============================##
+
+Full_Data <- CSI_Yearly_Stats |>
+  select(pred_year, number_of_events, Percentage)
+
+mid_point <- ceiling(nrow(Full_Data) / 2)
+
+Left_Half <- Full_Data[1:mid_point, ]
+Right_Half <- Full_Data[(mid_point + 1):nrow(Full_Data), ]
+
+if (nrow(Right_Half) < nrow(Left_Half)) {
+  Right_Half <- bind_rows(Right_Half, tibble(pred_year = NA, number_of_events = NA, Percentage = NA))
+}
+
+Split_Table <- bind_cols(Left_Half, Right_Half)
+
+kbl(Split_Table, 
+    format = "latex", 
+    booktabs = TRUE, 
+    digits = 2, 
+    caption = "Temporal Distribution of CSI Active Years (Split View)",
+    col.names = c("Year", "Events", "%", "Year", "Events", "%"),
+    align = c("c", "r", "r", "c", "r", "r")) |>
+  kable_styling(latex_options = c("hold_position", "striped")) |>
+  add_header_above(c("Period 1" = 3, "Period 2" = 3))
+
+
+
+##===============================##
 
 }, error = function(e) message(e))
 

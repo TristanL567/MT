@@ -202,8 +202,7 @@ Based on the identified problem that standard metrics fail to distinguish betwee
 
 Standard ratios (like P/E) are too noisy, but an Autoencoder can find the "hidden" structure of a failing firm.\\
 
-\textit{Does the integration Autoencoders significantly improve the performance (Average Precision) of Ensemble models 
-    compared to  those trained solely on raw financial data?} \\
+\textit{How does the integration of Autoencoders for feature engineering impact the Average Precision of Ensemble models compared to those trained solely on raw financial data?} \\
 
 \textit{Hypothesis:} Autoencoders will successfully denoise volatile market indicators, allowing the Ensemble model to identify "structural" distress earlier than models relying on raw accounting inputs.
 
@@ -211,15 +210,14 @@ Standard ratios (like P/E) are too noisy, but an Autoencoder can find the "hidde
 
 Showing that decision trees (handling the non-linearities) are better than the linear Altman Z-Score at saving the "Ecstasy" stocks. \\
 
-\textit{Do Ensemble methods exhibit a superior ability to distinguish between recoverable volatility ('Ecstasy') and terminal implosion ('Agony') compared to indiscriminate volatility-based exclusion strategies?} \\ 
+\textit{To what extent do Ensemble methods reduce the False Positive Rate (classifying recoverable volatility as CSI) compared to traditional volatility-based exclusion strategies, while maintaining Recall?} \\ 
 
 \textit{Hypothesis:} Ensemble models will distinguish between 'good' volatility (growth) and 'bad' volatility (implosion) more effectively than linear models, thereby reducing the exclusion of high-performing winners.
 
-\subsection{Sub-Question 3: Sensitivity}
+\subsection{Sub-Question 3: Feature Importance.}
 
-\textit{Does shortening the prediction horizon from 12 months to 6 months significantly enhance the index's ability to react to distress signals, or does it introduce excessive turnover without performance gains?} \\ 
-
-\textit{Prediction Horizon:} Reacting faster to changes.
+\textit{Which features are most important for distinguishing between 'Zombie' firms (CSI) and non-zombie firms?
+?} \\ 
 
 %==== Chapter 3: Research Design ==============================================%
 

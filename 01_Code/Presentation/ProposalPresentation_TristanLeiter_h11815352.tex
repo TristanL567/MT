@@ -179,10 +179,15 @@
 
   \begin{itemize}
       \setlength\itemsep{0.3em}
-    \item Does the integration Autoencoders significantly improve the performance (Average Precision) of Ensemble models 
-    compared to  those trained solely on raw financial data?
-    \item Do Ensemble methods exhibit a superior ability to distinguish between recoverable volatility ('Ecstasy') and terminal implosion ('Agony') compared to indiscriminate volatility-based exclusion strategies?
-    \item Does shortening the prediction horizon from 12 months to 6 months significantly enhance the index's ability to react to distress signals, or does it introduce excessive turnover without performance gains?
+    \item How does the integration of Autoencoders for feature engineering impact the Average Precision of Ensemble models compared to those trained solely on raw financial data?
+    
+%%% RQ 2:
+    % \item Do Ensemble methods exhibit a superior ability to distinguish between recoverable volatility ('Ecstasy') and terminal implosion ('Agony') compared to indiscriminate volatility-based exclusion strategies?
+    \item To what extent do Ensemble methods reduce the False Positive Rate (classifying recoverable volatility as CSI) compared to traditional volatility-based exclusion strategies, while maintaining Recall?
+    
+%%% RQ 3:
+    \item Which features are most important for distinguishing between 'Zombie' firms (CSI) and non-zombie firms?
+    
   \end{itemize}
   
   \vspace{1em}
@@ -249,7 +254,7 @@
 
     \item Using \textbf{Autoencoders} on the feature engineered data to test their utility for either feature denoising or signal generation.
     \item \textbf{Supervised Learning:}
-    Training ensemble-methods (Random Forest, XGBoost, CatBoost, LightGBM) on both raw data and latent features to predict the probability of CSI.
+    Training ensemble methods (Random Forest, XGBoost, CatBoost, LightGBM) on both raw data and latent features to predict the probability of CSI.
 
   \end{itemize}
   
@@ -281,15 +286,15 @@
   To ensure a proper \textbf{Out-of-Sample test}, the dataset will be split into three parts:
   
   \begin{itemize}
-    \item Training-Set for Cross-Validation
-    \item Test-set for Model-selection
+    \item Training set for Cross-Validation
+    \item Test set for Model-selection
     \item Out-of-Sample set for backtesting
   \end{itemize}
   
   The best-performing model within the test-set will be used to predict a CSI for each firm in the consecutive year.
-  All firms exceeding the the probability threshold, $\theta$, will be removed.
+  All firms exceeding the probability threshold, $\theta$, will be removed.
   In this context, $\theta$ is selected based on the desired FPR rate (for example $3\%$ or $5\%$).
-  Additionally, the "Crash-Filtered" Index will be rebalanced anually at the end of each calendar year.
+  Additionally, the "Crash-Filtered" Index will be rebalanced annually at the end of each calendar year.
 
   \vspace{0.3em}
 
@@ -355,8 +360,8 @@ Value Destruction (No Recovery) & 2.2\% & 0.8\%\\
       \textbf{Features}
       \begin{itemize}
         \item \textbf{Accounting:} Balance-Sheet and Income-Statement variables.
-        \item \textbf{Macro:} Variables with possible interactions with accounting variables (interest rate, others). 
-        Obtained from the FRED database.
+        \item \textbf{Macro:} Variables with possible interactions with accounting variables (interest rate, others),
+        obtained from the FRED database.
         \item \textbf{Other:} Specifically targeting "Zombie" precursors:
         \begin{itemize}
             \item \textit{Employees} (Number of employees).
@@ -440,11 +445,11 @@ Value Destruction (No Recovery) & 2.2\% & 0.8\%\\
         \citet{Tewari2024} with the CRSP and Compustat Data.
 
         \item \textbf{Extension:} Extending the results of \citet{Tewari2024} by including autoencoders for extraction
-        of the informational content in the features and by using the model-predictions for index-constructions.
+        of the informational content in the features and by using the model-predictions for index construction.
 
         \item \textbf{Challenging traditional risk-scaling approaches:} \\
-        Showing that ML-applications are better suited to distinguish between Ecstasy and Agony stocks compared to
-        classical risk-scaling methods, like Low-Volatility, Low-Beta or Altman's Z-score. Autoencoders and ensemble-methods
+        Showing that ML applications are better suited to distinguish between Ecstasy and Agony stocks compared to
+        classical risk-scaling methods, like Low-Volatility, Low-Beta or Altman's Z-score. Autoencoders and ensemble methods
         are well suited for capturing the complex interactions between accounting and macro variables.
 
     \end{itemize}
@@ -512,7 +517,7 @@ Year & Events & \% & Year & Events & \%\\
 \addlinespace
 \cellcolor{gray!10}{2008} & \cellcolor{gray!10}{55} & \cellcolor{gray!10}{2.46} & \cellcolor{gray!10}{2021} & \cellcolor{gray!10}{211} & \cellcolor{gray!10}{9.44}\\
 2009 & 114 & 5.10 & 2022 & 97 & 4.34\\
-\cellcolor{gray!10}{2010} & \cellcolor{gray!10}{70} & \cellcolor{gray!10}{3.13} & \cellcolor{gray!10}{NA} & \cellcolor{gray!10}{NA} & \cellcolor{gray!10}{NA}\\
+\cellcolor{gray!10}{2010} & \cellcolor{gray!10}{70} & \cellcolor{gray!10}{3.13} & \cellcolor{gray!10}{} & \cellcolor{gray!10}{} & \cellcolor{gray!10}{}\\
 \bottomrule
 \end{tabular}
 % --------------------------

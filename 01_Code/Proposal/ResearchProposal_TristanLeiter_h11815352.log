@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2025.1.30)  23 JAN 2026 19:53
+This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2025.1.30)  25 JAN 2026 11:02
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -626,13 +626,21 @@ Overfull \hbox (3.01602pt too wide) in paragraph at lines 806--807
 \T1/lmr/m/n/10 While the Area Un-der the Re-ceiver Op-er-at-ing Char-ac-ter-is-tic Curve (AUC-ROC) is the stan-dard met-ric in bankruptcy
  []
 
-(./ResearchProposal_TristanLeiter_h11815352.bbl
+
 
 [14
 
-])
+]
+Chapter 9.
+
 
 [15
+
+] (./ResearchProposal_TristanLeiter_h11815352.bbl
+
+[16])
+
+[17
 
 ] (./ResearchProposal_TristanLeiter_h11815352.aux)
  ***********
@@ -643,21 +651,21 @@ L3 programming layer <2024-12-25>
 LaTeX Warning: There were undefined references.
 
 Package rerunfilecheck Info: File `ResearchProposal_TristanLeiter_h11815352.out' has not changed.
-(rerunfilecheck)             Checksum: 85B08A3A47827BE3B2768995E4944945;6201.
+(rerunfilecheck)             Checksum: C17E5BFCAEDA51E63D638B0DABF9807A;6801.
  ) 
 Here is how much of TeX's memory you used:
- 11257 strings out of 475177
- 176956 string characters out of 5763703
- 597481 words of memory out of 5000000
- 33975 multiletter control sequences out of 15000+600000
+ 11271 strings out of 475177
+ 177122 string characters out of 5763703
+ 597487 words of memory out of 5000000
+ 33979 multiletter control sequences out of 15000+600000
  627503 words of font info for 68 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
  75i,11n,79p,930b,668s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx12.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx7.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmcsc10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmex10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmmi10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmmi7.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr12.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr7.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmri10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmri7.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmsy10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmtt10.pfb><c:/Users/TristanLeiter/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/lm/lmtt8.pfb>
-Output written on ResearchProposal_TristanLeiter_h11815352.pdf (16 pages, 374031 bytes).
+Output written on ResearchProposal_TristanLeiter_h11815352.pdf (18 pages, 380471 bytes).
 PDF statistics:
- 413 PDF objects out of 1000 (max. 8388607)
- 358 compressed objects within 4 object streams
- 98 named destinations out of 1000 (max. 500000)
- 265 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 442 PDF objects out of 1000 (max. 8388607)
+ 385 compressed objects within 4 object streams
+ 108 named destinations out of 1000 (max. 500000)
+ 297 words of extra memory for PDF output out of 10000 (max. 10000000)
 

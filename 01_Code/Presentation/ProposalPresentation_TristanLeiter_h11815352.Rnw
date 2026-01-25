@@ -116,7 +116,7 @@ knit2pdf(Directory_LaTeX)
         \item \citet{Cembalest2014} finds that equity indices are driven by a small tail of winners, while approx. 40\% of constituents suffer "catastrophic declines" ($>70\%$ drawdown) without recovery.
     \end{itemize}
 
-    \item \citet{Tewari2024} formalize this as a \\
+    \item \citet{Tewari2024} formalize these events as \\
     \textbf{Catastrophic Stock Implosion (CSI)}.
     \begin{itemize}
         \item It is a distinct event: a severe price downturn followed by a "zombie" period of prolonged stagnation.
@@ -142,7 +142,8 @@ knit2pdf(Directory_LaTeX)
 
   \begin{itemize}
       \setlength\itemsep{0.3em}
-    \item Does the integration of latent features derived from Denoising Autoencoders significantly improve the predictive performance (Average Precision) of Ensemble models compared to those trained solely on raw financial data?
+    \item Does the integration Autoencoders significantly improve the performance (Average Precision) of Ensemble models 
+    compared to  those trained solely on raw financial data?
     \item Do Ensemble methods exhibit a superior ability to distinguish between recoverable volatility ('Ecstasy') and terminal implosion ('Agony') compared to indiscriminate volatility-based exclusion strategies?
     \item Does shortening the prediction horizon from 12 months to 6 months significantly enhance the index's ability to react to distress signals, or does it introduce excessive turnover without performance gains?
   \end{itemize}
@@ -209,7 +210,7 @@ knit2pdf(Directory_LaTeX)
   \begin{itemize}
     \setlength\itemsep{0.8em}
 
-    \item Using an \textbf{Autoencoder} to compress the noisy financial data into latent "distress structures" that linear PCA misses.
+    \item Using \textbf{Autoencoders} on the feature engineered data to test their utility for either feature denoising or signal generation.
     \item \textbf{Supervised Learning:}
     Training ensemble-methods (Random Forest, XGBoost, CatBoost, LightGBM) on both raw data and latent features to predict the probability of CSI.
 
@@ -417,7 +418,7 @@ Value Destruction (No Recovery) & 2.2\% & 0.8\%\\
 
 %%% Slide 07A - Implosion Count per Number of CSI-events per event type %%%
 \section{Appendix}
-\begin{frame}{Appendix: Number of CSIs per Type}
+\begin{frame}{Appendix: Frequency of Firms by CSI Count}
 
 \begin{table}[!h]
 \centering
@@ -448,7 +449,7 @@ Total CSI Events & Number of Firms & Percentage (\%)\\
 
 %%% Slide 07B - Implosion Count per Number of CSI-events per year%%%
 \section{Appendix}
-\begin{frame}{Appendix: Number of CSIs per Year}
+\begin{frame}{Appendix: Annual Frequency and Percentage of CSI Events}
 
 \begin{table}[!h]
 \centering

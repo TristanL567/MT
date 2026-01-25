@@ -809,10 +809,66 @@ This phenomenon is particularly dangerous for "Avoidance Alpha" strategies. A hi
 
 Therefore, while this study will report AUC-ROC for comparability with existing literature (e.g., \citet{Altman1968}), it serves as a secondary diagnostic. We explicitly monitor for divergence between AUC-ROC and Average Precision to ensure the model is not achieving high scores simply by overfitting to the majority class of "safe" firms while failing to solve the central "Agony and Ecstasy" dilemma.
 
+%==== Chapter 9: Autoencoders =================================================%
+
+\chapter{Autoencoders}
+
+\section{Feature extraction}
+Autoencoders (AE) serve as powerful unsupervised learning tools for modeling complex financial data. In the context of predicting Catastrophic Stock Implosion (CSI), we identify two primary architectural strategies: Denoising Autoencoders for robust feature cleaning and Reconstruction Error for anomaly detection.
+
+\subsection{Architectural Strategies}
+
+\subsubsection{Use Case A: Denoising Autoencoders (DAE) for Manifold Learning}
+The primary objective of a Denoising Autoencoder (DAE) in financial forensics is to recover the "true" economic health of a firm from "noisy" accounting data. Financial statements often contain noise due to earnings management, temporary accruals, or reporting inconsistencies.
+
+\begin{itemize}
+    \item \textbf{Mechanism:} The DAE is trained to map a corrupted input vector, $\tilde{x}$, back to the original uncorrupted input, $x$. The corruption is introduced stochastically (e.g., via Gaussian noise or masking).
+    \item \textbf{Objective Function:} The model minimizes the loss function $L(x, g(f(\tilde{x})))$, where $f$ is the encoder and $g$ is the decoder.
+    \item \textbf{Theoretical Benefit:} By forcing the network to remove noise, the AE learns the underlying \textit{manifold} of valid financial structures (e.g., the intrinsic relationship between Assets, Liabilities, and Equity).
+    \item \textbf{Application:} The learned bottleneck representation serves as a robust, noise-reduced feature set for the downstream supervised classifier (e.g., predicting $y=1$).
+\end{itemize}
+
+\subsubsection{Use Case C: Anomaly Detection via Reconstruction Error}
+Catastrophic stock implosions are, by definition, anomalies. A standard Autoencoder can be utilized as a semi-supervised anomaly detector rather than just a feature extractor.
+
+\begin{itemize}
+    \item \textbf{Mechanism:} An AE is trained exclusively on "healthy" firms (where $y=0$) to learn the latent structure of non-imploding companies.
+    \item \textbf{Inference:} When a potentially catastrophic firm (a future CSI event) is passed through this trained network, the AE will struggle to reconstruct the input because the firm's financial structure deviates from the healthy manifold.
+    \item \textbf{New Feature:} The \textit{Reconstruction Error} (typically Mean Squared Error between the input and the output) is calculated for each observation.
+    \item \textbf{Application:} This error value is treated as a high-signal feature in the final supervised model. A high reconstruction error acts as a proxy for "structural financial abnormality."
+\end{itemize}
+
+\subsection{Implementation in R}
+
+The following R packages and functions are recommended for implementing the strategies outlined above.
+
+\subsubsection{For Use Case A (Denoising)}
+The \texttt{keras} package is preferred for DAEs due to its flexibility in adding custom noise layers, which are essential for the denoising architecture.
+
+\begin{itemize}
+    \item \textbf{Package:} \texttt{keras} (Interface to TensorFlow)
+    \item \textbf{Core Functions:}
+    \begin{itemize}
+        \item \texttt{layer\_gaussian\_noise()}: injects stochastic noise into the input layer during training.
+        \item \texttt{layer\_dropout()}: alternative method to corrupt inputs by randomly zeroing out features.
+        \item \texttt{fit()}: utilized with distinct $x$ (target) and $\tilde{x}$ (input) data to train the reconstruction task.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{For Use Case C (Anomaly Detection)}
+The \texttt{h2o} package is highly efficient for this task, particularly given its ability to handle tabular accounting data and missing values natively without extensive preprocessing pipelines.
+
+\begin{itemize}
+    \item \textbf{Package:} \texttt{h2o}
+    \item \textbf{Core Functions:}
+    \begin{itemize}
+        \item \texttt{h2o.deeplearning(..., autoencoder = TRUE)}: trains the AE model.
+        \item \texttt{h2o.anomaly()}: a specialized function that automatically calculates the reconstruction error (MSE) for every row in a new dataset based on the trained model.
+    \end{itemize}
+\end{itemize}
 
 
-
-%==== Chapter 9: References ===================================================%
+%==== Chapter 10: References ==================================================%
 
 \bibliographystyle{plainnat} 
 \bibliography{references}

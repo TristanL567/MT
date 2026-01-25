@@ -85,7 +85,9 @@ knit2pdf(Directory_LaTeX)
 \title[Thesis Proposal]{The Agony and the Ecstasy} 
 \subtitle{Constructing a "Crash-Filtered" Equity Index using Machine Learning}
 \author{Tristan Leiter}
-\institute[WU]{Vienna University of Business and Economics}
+\institute[WU]{Vienna University of Business and Economics \\
+        \medskip
+        \scriptsize Supervisor: Prof. Kurt Hornik}
 \date{January 28, 2026}
 
 %==== Beginning of the document ===============================================%
@@ -94,26 +96,24 @@ knit2pdf(Directory_LaTeX)
 
 %==== Title Page ==============================================================%
 
-% 1. Title Page
 \begin{frame}
   \titlepage
 \end{frame}
 
-% 2. Outline
-% \begin{frame}{Agenda}
-%   \tableofcontents
-% \end{frame}
-
 %==== 01 - Motivation =========================================================%
 
+\section{Motivation}
 \begin{frame}{The "Agony and Ecstasy" of Indexing}
   \begin{itemize}
     \setlength\itemsep{1.2em}
     
     \item \textbf{The Passive Investing Dilemma:} 
-    Indices capture the "Ecstasy" of extreme winners but systematically force investors to hold the "Agony" of imploding stocks.
+    Indices capture the "Ecstasy" of \\
+    extreme winners but systematically force investors to hold the "Agony" of \\
+    imploding stocks.
     \begin{itemize}
-        \item \citet{Cembalest2014} finds that equity indices are driven by a small tail of winners, while approx. 40\% of constituents suffer "catastrophic declines" ($>70\%$ drawdown) without recovery.
+        \item \citet{Cembalest2014} finds that the Russell 3000 Index is driven by a small tail of extreme winners, 
+        while approx. 40\% of constituents are negative return contributors, with many suffering "catastrophic declines" without recovery.
     \end{itemize}
 
     \item \citet{Tewari2024} formalize these events as \\
@@ -149,7 +149,7 @@ knit2pdf(Directory_LaTeX)
     \item To what extent do Ensemble methods reduce the False Positive Rate (classifying recoverable volatility as CSI) compared to traditional volatility-based exclusion strategies, while maintaining Recall?
     
 %%% RQ 3:
-    \item Which features are most important for distinguishing between 'Zombie' firms (CSI) and non-zombie firms?
+    \item Which features are most important for distinguishing between "Zombie" firms (CSI) and non-zombie firms?
     
   \end{itemize}
   
@@ -273,7 +273,7 @@ specific risk constraint (e.g., $FPR \leq 5\%$), ensuring the exclusion rate ali
 %==== 05 - Data ===============================================================%
 
 %%% Slide 05A - CRSP %%%
-\section{CRSP}
+\section{Data}
 \begin{frame}{CRSP}
 
       \textbf{The Universe (CRSP)}
@@ -317,7 +317,6 @@ Value Destruction (No Recovery) & 2.2\% & 0.8\%\\
 
 %%% Slide 05B - Compustat %%%
 
-\section{Compustat}
 \begin{frame}{Compustat}
 
       \textbf{Features}
@@ -336,7 +335,6 @@ Value Destruction (No Recovery) & 2.2\% & 0.8\%\\
 
 %%% 05C - Feature table %%%%%%%%%%
 
-\section{Compustat}
 \begin{frame}{Compustat}
 
 \begin{table}[ht]
@@ -453,7 +451,6 @@ Total CSI Events & Number of Firms & Percentage (\%)\\
 \end{frame}
 
 %%% Slide 07B - Implosion Count per Number of CSI-events per year%%%
-\section{Appendix}
 \begin{frame}{Appendix: Annual Frequency and Percentage of CSI Events}
 
 \begin{table}[!h]

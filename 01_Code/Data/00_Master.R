@@ -28,6 +28,7 @@
 #   05_CSI_Label.R       Catastrophic Stock Implosion label construction
 #   06_Feature_Eng.R     Feature engineering and rolling aggregations
 #   06B_Autoencoder.R    Autoencoder for latent feature extraction
+#   06C_DataPreparation.R
 #   07_Feature_Sel.R     Feature selection (Boruta / importance screening)
 #   08_Split.R           Train / test / OOS split construction
 #   09_Train.R           Model training with cross-validated HPO

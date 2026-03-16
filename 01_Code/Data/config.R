@@ -77,6 +77,12 @@ PATH_PRICES_MONTHLY     <- file.path(DIR_CRSP_PROC, "prices_monthly.rds")
 PATH_DELISTING          <- file.path(DIR_CRSP_RAW,  "delisting_raw.rds")
 
 #------------------------------------------------------------------------------#
+# File paths — 04_Macro.R
+#------------------------------------------------------------------------------#
+PATH_MACRO_RAW     <- file.path(DIR_MACRO, "macro_raw.rds")
+PATH_MACRO_MONTHLY <- file.path(DIR_MACRO, "macro_monthly.rds")
+
+#------------------------------------------------------------------------------#
 # File paths — 05_CSI_Label.R
 #------------------------------------------------------------------------------#
 

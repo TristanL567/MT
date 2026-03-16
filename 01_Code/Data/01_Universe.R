@@ -49,25 +49,8 @@ sourceFunctions <- function (functionDirectory)  {
 
 #==== 1C - Parameters =========================================================#
 
-## Directories.
-Data_Directory <- file.path(Directory, "02_Data")
-Data_CRSP_Directory <- file.path(Data_Directory, "CRSP")
 
-Functions_Directory <- file.path(Directory, "01_Code/Data/Subfunctions")
 
-## Load all code files in the functions directory.
-sourceFunctions(Functions_Directory)
-
-## Date range.
-start_date <- ymd("1960-01-01")
-end_date <- ymd("2024-12-31")
-
-## Saved objects.
-
-# Data_Stock_Masterlist.rds - Masterlist of all firms after filtering.
-# Data_Monthly - Contains all data about the firms in the masterlist.
-# Data_Failed_Companies - Contains the tibble with the failed company details.
-# Data_y - Final tibble of firms with the target and if they are in a zombie state (target is then NA).
 
 #==== 1D - Setup WRDS =========================================================#
 
@@ -80,8 +63,8 @@ wrds <- get_wrds_connection()
 print(wrds)
 
 #==============================================================================#
-#==== 01_Universe.R ===========================================================# 
-#==== Stock Universe Construction & Filtering =================================# 
+#==== 01_Universe.R ===========================================================#
+#==== Stock Universe Construction & Filtering =================================#
 #==============================================================================#
 #
 # PURPOSE:
@@ -94,20 +77,45 @@ print(wrds)
 #   - config.R parameters
 #
 # OUTPUT:
-#   - Data/CRSP/Raw/universe_raw.rds         : unfiltered, as-downloaded
-#   - Data/CRSP/Processed/universe.rds       : filtered, deduplicated, validated
+#   - Data/CRSP/Raw/universe_raw.rds      : unfiltered, as-downloaded
+#   - Data/CRSP/Processed/universe.rds    : filtered, deduplicated, validated
 #     Columns: permno, permco, ticker, issuernm, is_active,
 #              listing_date, removal_date, lifetime_years,
 #              exchange, siccd, naics,
 #              securitytype, securitysubtype, sharetype, shareclass,
-#              delactiontype, delreasontype, n_changes
+#              n_changes
 #
 # ASSERTIONS (pipeline fails loudly if violated):
-#   - No duplicate permno in output
-#   - No duplicate permco in output (one share class per economic entity)
-#   - All permno have lifetime_years >= MIN_LIFETIME_YEARS
-#   - All permno are on valid exchanges
-#   - Universe size is plausible (>= 3,000 firms)
+#   A) No duplicate permno in output
+#   B) No duplicate permco in output (one share class per economic entity)
+#   C) All permno are on valid exchanges
+#   D) Universe size is plausible (>= 5,000 firms)
+#   E) permco present for all rows (join completeness — warning only)
+#
+# SCHEMA NOTE:
+#   crsp_a_stock.*  — full historical CRSP data including delistings (USE THIS)
+#   crsp.*          — restricted/partial view in this WRDS subscription.
+#                     crsp.msenames returns an incomplete universe — do not use
+#                     for msenames. Exception: crsp.stksecurityinfohist only
+#                     exists in crsp.* — that table reference is correct.
+#
+# KEY DESIGN DECISIONS:
+#   [1] FIRST valid record, not last.
+#       Terminal stksecurityinfohist records for delisted stocks have
+#       primaryexch outside {N, A, Q}. Using max(secinfoenddt) caused the
+#       exchange filter to silently drop all delisted stocks — root cause of
+#       the survivor bias in prior pipeline versions. Fix: filter to valid
+#       exchange/type records first, then take min(secinfostartdt).
+#
+#   [2] lifetime_years filter NOT applied here.
+#       Short-lived delisted stocks are disproportionately CSI candidates.
+#       Removing them at universe construction directly biases the label
+#       distribution. Minimum history requirement enforced in
+#       06_Feature_Engineering.R where it affects only the feature window.
+#
+#   [3] delactiontype / delreasontype NOT included.
+#       Only populated on terminal records, which are excluded by the valid
+#       exchange filter in Step 3. Cannot be reliably retrieved here.
 #
 #==============================================================================#
 
@@ -117,14 +125,20 @@ cat("\n[01_Universe.R] START:", format(Sys.time()), "\n")
 
 #==============================================================================#
 # 1. Connect to CRSP tables (lazy — no data pulled yet)
+#
+#    stksecurityinfohist : security-level SCD table — only exists in crsp.*
+#    msenames            : name/permco history — must use crsp_a_stock.*
 #==============================================================================#
 
-stk_info_db  <- tbl(wrds, I("crsp.stksecurityinfohist"))
-msenames_db  <- tbl(wrds, I("crsp.msenames"))   # Needed for permco
+stk_info_db <- tbl(wrds, I("crsp.stksecurityinfohist"))
+msenames_db <- tbl(wrds, I("crsp_a_stock.msenames"))    # crsp.msenames is incomplete
 
 #==============================================================================#
-# 2. Compute lifetime statistics per permno
-#    Still lazy — executed on the DB server
+# 2. Compute lifetime statistics per permno (lazy — runs on DB)
+#
+#    listing_date : earliest secinfostartdt across all records for this permno
+#    removal_date : latest   secinfoenddt   across all records for this permno
+#    n_changes    : number of SCD record changes (data complexity proxy)
 #==============================================================================#
 
 lifetime_stats <- stk_info_db |>
@@ -132,21 +146,37 @@ lifetime_stats <- stk_info_db |>
   summarise(
     listing_date = min(secinfostartdt, na.rm = TRUE),
     removal_date = max(secinfoenddt,   na.rm = TRUE),
-    n_changes    = n()   # Number of security info record changes (complexity proxy)
+    n_changes    = n()
   ) |>
   ungroup()
 
 #==============================================================================#
-# 3. Extract most-recent security attributes per permno
+# 3. Extract first qualifying security attributes per permno
 #
-#    RATIONALE: stksecurityinfohist is a slowly-changing dimension table.
-#    We take the latest record to capture the terminal state of each security
-#    (e.g., final exchange, final security type before delisting).
+#    RATIONALE: Apply exchange + security type filters INSIDE the lazy query,
+#    then take the FIRST (earliest) qualifying record per permno.
+#
+#    WHY NOT THE LAST RECORD:
+#    For delisted stocks the terminal record has primaryexch outside
+#    {N, A, Q} because the stock is no longer listed anywhere. Taking
+#    max(secinfoenddt) — the prior approach — caused the exchange filter in
+#    Step 6 to silently exclude every delisted stock, producing a survivor-
+#    biased universe of ~4,500 firms instead of the expected ~10,000+.
+#
+#    By filtering to valid records first, then taking min(secinfostartdt),
+#    we capture the stock's attributes during its active listing period
+#    regardless of post-delisting terminal state.
 #==============================================================================#
 
 final_attributes <- stk_info_db |>
+  filter(
+    primaryexch     %in% VALID_EXCHANGES,           # NYSE ("N"), AMEX ("A"), NASDAQ ("Q")
+    securitytype    %in% c("EQTY", NA_character_),  # Equity or unclassified legacy
+    securitysubtype %in% c("COM",  NA_character_),  # Common stock or unclassified legacy
+    sharetype       %in% c("NS",   NA_character_)   # Normal shares or unclassified legacy
+  ) |>
   group_by(permno) |>
-  filter(secinfoenddt == max(secinfoenddt, na.rm = TRUE)) |>
+  filter(secinfostartdt == min(secinfostartdt, na.rm = TRUE)) |>  # First valid record
   ungroup() |>
   select(
     permno,
@@ -158,51 +188,66 @@ final_attributes <- stk_info_db |>
     sharetype,
     shareclass,
     siccd,
-    naics,
-    delactiontype,
-    delreasontype
+    naics
+    ## delactiontype / delreasontype intentionally excluded — see design note [3]
   ) |>
-  collect() |>           # Pull to R first
-  arrange(permno) |>     # Deterministic order before dedup
-  distinct(permno, .keep_all = TRUE)  # Then deduplicate in R
+  collect() |>
+  arrange(permno) |>
+  distinct(permno, .keep_all = TRUE)   # Break any remaining ties after collect()
+
+cat("[01_Universe.R] Qualifying permno from stksecurityinfohist:",
+    nrow(final_attributes), "\n")
 
 #==============================================================================#
 # 4. Join permco from msenames
 #
 #    RATIONALE: permco is CRSP's company-level identifier — all share classes
-#    of the same economic entity share one permco. This is the correct key for
-#    deduplication, not issuernm (which is a free-text field and unreliable).
+#    of the same economic entity share one permco. This is the correct key
+#    for deduplication; issuernm is a free-text field and unreliable.
 #
-#    msenames can have multiple rows per permno (name changes over time).
-#    We take the latest record to get the most recent permco assignment.
+#    msenames has multiple rows per permno (name/status changes over time).
+#    permco is stable across name changes — take the FIRST record to avoid
+#    the same terminal-record problem as Step 3.
+#
+#    SCHEMA: crsp_a_stock.msenames required — crsp.msenames is incomplete
+#    in this WRDS subscription (~4,500 records vs ~38,000 in crsp_a_stock).
 #==============================================================================#
 
 permco_map <- msenames_db |>
   group_by(permno) |>
-  filter(nameendt == max(nameendt, na.rm = TRUE)) |>
+  filter(namedt == min(namedt, na.rm = TRUE)) |>    # First record — permco is stable
   ungroup() |>
   select(permno, permco) |>
   collect() |>
   distinct(permno, .keep_all = TRUE)
 
+cat("[01_Universe.R] permco map size:", nrow(permco_map), "\n")
+
 #==============================================================================#
-# 5. Assemble raw masterlist and pull to R memory
+# 5. Assemble raw masterlist in R memory
+#
+#    inner_join on final_attributes : only permno that passed Step 3 filters
+#    left_join  on permco_map       : preserve all qualifying permno even if
+#                                     permco is missing (triggers warning E)
 #==============================================================================#
 
 universe_raw <- lifetime_stats |>
-  collect() |>                                     # Pull lifetime_stats to R first
-  inner_join(final_attributes, by = "permno") |>   # Both now in R memory
-  left_join(permco_map,        by = "permno") |>   # Both now in R memory
+  collect() |>
+  inner_join(final_attributes, by = "permno") |>
+  left_join(permco_map,        by = "permno") |>    # Both in R memory
   mutate(
-    is_active      = if_else(removal_date >= max(removal_date, na.rm = TRUE),
-                             "Yes", "No"),
-    lifetime_years = round(as.numeric(removal_date - listing_date) / 365.25, 2)
+    is_active = if_else(
+      removal_date >= max(removal_date, na.rm = TRUE),
+      "Yes", "No"
+    ),
+    lifetime_years = round(
+      as.numeric(removal_date - listing_date) / 365.25, 2
+    )
   ) |>
   select(
     permno, permco,
     ticker, issuernm, is_active,
     listing_date, removal_date, lifetime_years,
-    delactiontype, delreasontype,
     securitytype, securitysubtype, sharetype, shareclass,
     siccd, naics,
     exchange = primaryexch,
@@ -210,52 +255,47 @@ universe_raw <- lifetime_stats |>
   ) |>
   arrange(permno)
 
-## Save raw (immutable reference — never overwrite this)
+## Save raw — immutable reference, never overwrite
 path_raw <- file.path(Data_CRSP_Directory, "Raw", "universe_raw.rds")
-saveRDS(universe_raw, file = path_raw)
+saveRDS(universe_raw, PATH_UNIVERSE_RAW)
 cat("[01_Universe.R] Raw universe saved:", nrow(universe_raw), "rows\n")
 
 #==============================================================================#
 # 6. Filter universe
 #
-#    Filters applied and rationale:
+#    Filters A–C are enforced upstream in the Step 3 lazy query and are
+#    therefore functionally redundant here. They are retained explicitly as
+#    documentation of intent and as a safety net if Step 3 is modified.
+#    Filter D is applied here only (removal_date is not in stksecurityinfohist
+#    at the record level — it comes from lifetime_stats aggregation).
 #
-#    A) securitytype: exclude "FUND" (mutual funds, ETFs)
-#       securitysubtype: whitelist only "COM" (common stock) and NA
-#       — subtype is often NA for older records; excluding NA would drop
-#         a large fraction of legitimate equities from the 1960s–1990s.
+#    A) securitytype    "EQTY" or NA  — excludes FUNDs, ETFs
+#       securitysubtype "COM"  or NA  — common stock only
+#    B) sharetype       "NS"   or NA  — normal shares only
+#       Excludes ADRs ("AD"), preferred ("PS"), warrants ("WS"),
+#       rights ("RT"), ETF shares ("ET").
+#    C) exchange        VALID_EXCHANGES — NYSE / AMEX / NASDAQ only
+#    D) removal_date > START_DATE — excludes stocks fully delisted before
+#       the analysis window begins. Not applied in Step 3.
 #
-#    B) sharetype == "NS": keep only "Normal Shares"
-#       — excludes ADRs ("AD"), preferred shares ("PS"), warrants ("WS"),
-#         rights ("RT"), and ETF shares ("ET") that pass the securitytype filter.
-#
-#    C) exchange: NYSE ("N"), AMEX ("A"), NASDAQ ("Q") only
-#       — excludes OTC pink sheets and other non-standard venues.
-#
-#    D) removal_date > START_DATE: exclude securities that were fully
-#       delisted before our analysis period begins (dead weight).
-#
-#    E) lifetime_years >= MIN_LIFETIME_YEARS: require sufficient history
-#       for the 5-year rolling feature window (paper: Approach 2).
+#    NOT APPLIED: lifetime_years >= MIN_LIFETIME_YEARS
+#    See design note [2] in header. Applied in 06_Feature_Engineering.R.
 #==============================================================================#
 
 universe_filtered <- universe_raw |>
   filter(
-    ## A) Security type
-    !securitytype %in% c("FUND"),
-    securitysubtype %in% c("COM", NA),          # Common stock or unclassified legacy
+    ## A) Security type (redundant with Step 3 — safety net)
+    securitytype    %in% c("EQTY", NA),
+    securitysubtype %in% c("COM",  NA),
     
-    ## B) Share type — normal shares only
-    sharetype %in% c("NS", NA),                  # NA retained for pre-classification era
+    ## B) Share type (redundant with Step 3 — safety net)
+    sharetype %in% c("NS", NA),
     
-    ## C) Exchange
+    ## C) Exchange (redundant with Step 3 — safety net)
     exchange %in% VALID_EXCHANGES,
     
-    ## D) Active within analysis window
-    removal_date > START_DATE,
-    
-    ## E) Minimum lifetime for rolling feature window
-    lifetime_years >= MIN_LIFETIME_YEARS
+    ## D) Active within analysis window — NOT redundant, only checked here
+    removal_date > START_DATE
   )
 
 cat("[01_Universe.R] After filters:", nrow(universe_filtered), "rows\n")
@@ -263,22 +303,18 @@ cat("[01_Universe.R] After filters:", nrow(universe_filtered), "rows\n")
 #==============================================================================#
 # 7. Deduplicate to one row per economic entity (permco)
 #
-#    RATIONALE: Firms with dual/triple share classes (e.g., Alphabet Class A/B/C,
-#    Berkshire A/B) would otherwise appear multiple times in the panel, inflating
-#    implosion counts and introducing correlated observations.
+#    RATIONALE: Firms with dual/triple share classes (e.g., Alphabet A/B/C,
+#    Berkshire A/B) would otherwise appear multiple times in the panel,
+#    inflating implosion counts and introducing correlated observations.
 #
 #    Strategy: within each permco, retain the share class with the longest
-#    history (most data for feature engineering). Ties broken by lowest permno
-#    (earlier listing — typically the primary share class).
-#
-#    NOTE: If your research question explicitly requires multi-class analysis
-#    (e.g., voting vs. economic rights), comment out this block and handle
-#    clustering in the model instead.
+#    history (most data for feature engineering). Ties broken by lowest
+#    permno (earlier listing — typically the primary share class).
 #==============================================================================#
 
 universe <- universe_filtered |>
+  arrange(desc(lifetime_years), permno) |>   # arrange BEFORE group_by
   group_by(permco) |>
-  arrange(desc(lifetime_years), permno) |>
   slice(1) |>
   ungroup()
 
@@ -292,30 +328,21 @@ cat("[01_Universe.R] After permco deduplication:", nrow(universe), "rows\n")
 n_dup_permno <- sum(duplicated(universe$permno))
 if (n_dup_permno > 0) {
   stop(sprintf(
-    "[01_Universe.R] ASSERTION FAILED: %d duplicate permno found in universe.",
+    "[01_Universe.R] ASSERTION FAILED: %d duplicate permno in universe.",
     n_dup_permno
   ))
 }
 
-## B) No duplicate permco
-n_dup_permco <- sum(duplicated(universe$permco))
+## B) No duplicate permco (exclude NA permco from this check)
+n_dup_permco <- sum(duplicated(na.omit(universe$permco)))
 if (n_dup_permco > 0) {
   stop(sprintf(
-    "[01_Universe.R] ASSERTION FAILED: %d duplicate permco found in universe.",
+    "[01_Universe.R] ASSERTION FAILED: %d duplicate permco in universe.",
     n_dup_permco
   ))
 }
 
-## C) Lifetime years floor respected
-n_short <- sum(universe$lifetime_years < MIN_LIFETIME_YEARS, na.rm = TRUE)
-if (n_short > 0) {
-  stop(sprintf(
-    "[01_Universe.R] ASSERTION FAILED: %d firms below MIN_LIFETIME_YEARS threshold.",
-    n_short
-  ))
-}
-
-## D) Only valid exchanges
+## C) Only valid exchanges
 invalid_exch <- universe |> filter(!exchange %in% VALID_EXCHANGES)
 if (nrow(invalid_exch) > 0) {
   stop(sprintf(
@@ -325,15 +352,15 @@ if (nrow(invalid_exch) > 0) {
   ))
 }
 
-## E) Plausible universe size
-if (nrow(universe) < 3000) {
+## D) Plausible universe size — expect 8,000–14,000 before lifetime filter
+if (nrow(universe) < 5000) {
   stop(sprintf(
-    "[01_Universe.R] ASSERTION FAILED: Universe has only %d firms — suspiciously small. Check filters.",
+    "[01_Universe.R] ASSERTION FAILED: Universe has only %d firms (expected >= 5,000). Check filters.",
     nrow(universe)
   ))
 }
 
-## F) permco present for all rows (join succeeded)
+## E) permco present for all rows (left join completeness — warning only)
 n_missing_permco <- sum(is.na(universe$permco))
 if (n_missing_permco > 0) {
   warning(sprintf(
@@ -345,17 +372,23 @@ if (n_missing_permco > 0) {
 cat("[01_Universe.R] All assertions passed.\n")
 
 #==============================================================================#
-# 9. Save processed universe
+# 9. Save processed universe and print diagnostics
 #==============================================================================#
 
 path_processed <- file.path(Data_CRSP_Directory, "Processed", "universe.rds")
-saveRDS(universe, file = path_processed)
+saveRDS(universe, PATH_UNIVERSE)
 
 cat("[01_Universe.R] Processed universe saved:", nrow(universe), "firms\n")
+
 cat("[01_Universe.R] Exchange breakdown:\n")
-print(table(universe$exchange))
+print(table(universe$exchange, useNA = "ifany"))
+
 cat("[01_Universe.R] Active vs delisted:\n")
-print(table(universe$is_active))
+print(table(universe$is_active, useNA = "ifany"))
+
+cat("[01_Universe.R] Lifetime distribution (years):\n")
+print(summary(universe$lifetime_years))
+
 cat("[01_Universe.R] DONE:", format(Sys.time()), "\n")
 
 #==============================================================================#

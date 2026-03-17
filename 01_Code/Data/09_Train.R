@@ -100,7 +100,7 @@ if (!file.exists(PATH_FEATURES_LATENT)) {
 cat("[09_Train.R] Loading inputs...\n")
 
 features_raw    <- as.data.table(readRDS(PATH_FEATURES_RAW))
-features_latent <- as.data.table(arrow::read_parquet(PATH_FEATURES_LATENT))
+features_latent <- as.data.table(arrow::read_parquet("C:/Users/Tristan Leiter/Documents/MT/02_Data/Features/features_latent.parquet"))
 splits          <- readRDS(PATH_SPLITS)
 
 cat(sprintf("  features_raw    : %d rows, %d cols\n",
@@ -384,13 +384,13 @@ fn_train_xgboost <- function(
     depth_int <- as.integer(round(max_depth))
     mcw_int   <- as.integer(round(min_child_weight))
     
-    cat(sprintf(
-      "  [%02d/%02d] eta=%.3f | depth=%d | sub=%.2f | col=%.2f | "
-      "mcw=%d | gamma=%.2f | L2=%.2f | L1=%.2f\n",
-      current_iter, total_iters,
-      eta, depth_int, subsample, colsample_bytree,
-      mcw_int, gamma, lambda, alpha
-    ))
+    # cat(sprintf(
+    #   "  [%02d/%02d] eta=%.3f | depth=%d | sub=%.2f | col=%.2f | "
+    #   "mcw=%d | gamma=%.2f | L2=%.2f | L1=%.2f\n",
+    #   current_iter, total_iters,
+    #   eta, depth_int, subsample, colsample_bytree,
+    #   mcw_int, gamma, lambda, alpha
+    # ))
     
     params <- list(
       booster          = "gbtree",

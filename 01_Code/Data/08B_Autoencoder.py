@@ -540,6 +540,7 @@ class BetaVAE(nn.Module):
         # FIX 4: BCEWithLogitsLoss — numerically stable
         # Only applied to rows where y is not NA
         if gamma > 0 and labelled_mask.sum() > 0:
+            y_logit = self.classifier(z_mu)  # Recompute from z_mu
             logits_lab = y_logit[labelled_mask]
             y_true_lab = y_true[labelled_mask]
             clf_loss   = F.binary_cross_entropy_with_logits(  # FIX 4
@@ -631,7 +632,7 @@ def train_vae(model, train_loader, val_loader, cfg, device):
             lab_mask = ~torch.isnan(y_batch)
 
             optimiser.zero_grad()
-            x_recon, z_mu, z_lv, y_logit = model(x_batch)
+            x_recon, z_mu, z_lv, _ = model(x_batch)
             losses = model.compute_loss(
                 x_batch, x_recon, z_mu, z_lv, y_batch,
                 beta=beta_now, gamma=cfg["gamma"],
@@ -659,7 +660,7 @@ def train_vae(model, train_loader, val_loader, cfg, device):
                 y_val    = y_val.to(device)
                 lab_mask = ~torch.isnan(y_val)
 
-                x_recon, z_mu, z_lv, y_logit = model(x_val)
+                x_recon, z_mu, z_lv, _ = model(x_val)
                 v_losses = model.compute_loss(
                     x_val, x_recon, z_mu, z_lv, y_val,
                     beta=beta_now, gamma=cfg["gamma"],

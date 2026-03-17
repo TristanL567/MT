@@ -44,6 +44,7 @@ DIR_COMP_PROC <- file.path(DIR_COMP, "Processed")
 DIR_MACRO    <- file.path(DIR_DATA, "Macro")
 DIR_LABELS   <- file.path(DIR_DATA, "Labels")
 DIR_FEATURES <- file.path(DIR_DATA, "Features")
+DIR_PANEL    <- file.path(DIR_DATA, "Panel")
 
 ## Output
 DIR_FIGURES <- file.path(DIR_OUTPUT, "Figures")
@@ -54,7 +55,7 @@ DIR_MODELS  <- file.path(DIR_OUTPUT, "Models")
 invisible(lapply(
   c(DIR_CRSP_RAW, DIR_CRSP_PROC,
     DIR_COMP_RAW, DIR_COMP_PROC,
-    DIR_MACRO, DIR_LABELS, DIR_FEATURES,
+    DIR_MACRO, DIR_LABELS, DIR_FEATURES, DIR_PANEL,
     DIR_FIGURES, DIR_TABLES, DIR_MODELS),
   dir.create, showWarnings = FALSE, recursive = TRUE
 ))
@@ -77,8 +78,17 @@ PATH_PRICES_MONTHLY     <- file.path(DIR_CRSP_PROC, "prices_monthly.rds")
 PATH_DELISTING          <- file.path(DIR_CRSP_RAW,  "delisting_raw.rds")
 
 #------------------------------------------------------------------------------#
+# File paths — 03_Fundamentals.R
+#------------------------------------------------------------------------------#
+
+PATH_FUNDAMENTALS_RAW <- file.path(DIR_COMP_RAW,  "fundamentals_raw.rds")
+PATH_FUNDAMENTALS     <- file.path(DIR_COMP_PROC, "fundamentals.rds")
+PATH_CCM_LINK         <- file.path(DIR_COMP_RAW,  "ccm_link_raw.rds")
+
+#------------------------------------------------------------------------------#
 # File paths — 04_Macro.R
 #------------------------------------------------------------------------------#
+
 PATH_MACRO_RAW     <- file.path(DIR_MACRO, "macro_raw.rds")
 PATH_MACRO_MONTHLY <- file.path(DIR_MACRO, "macro_monthly.rds")
 
@@ -86,12 +96,61 @@ PATH_MACRO_MONTHLY <- file.path(DIR_MACRO, "macro_monthly.rds")
 # File paths — 05_CSI_Label.R
 #------------------------------------------------------------------------------#
 
-PATH_LABELS_BASE   <- file.path(DIR_LABELS,  "labels_base.rds")
-PATH_LABELS_GRID   <- file.path(DIR_LABELS,  "labels_all_grid.rds")
-PATH_LABELS_DIAG   <- file.path(DIR_LABELS,  "csi_diagnostics.rds")
-PATH_FIGURE_CSI    <- file.path(DIR_FIGURES, "csi_events_per_year_base.png")
+PATH_LABELS_BASE <- file.path(DIR_LABELS,  "labels_base.rds")
+PATH_LABELS_GRID <- file.path(DIR_LABELS,  "labels_all_grid.rds")
+PATH_LABELS_DIAG <- file.path(DIR_LABELS,  "csi_diagnostics.rds")
+PATH_FIGURE_CSI  <- file.path(DIR_FIGURES, "csi_events_per_year_base.png")
 ## Note: individual grid files labels_<param_id>.rds use inline file.path()
 ## in 05_CSI_Label.R since param_id is dynamic — this is acceptable.
+
+#------------------------------------------------------------------------------#
+# File paths — 06_Merge.R
+#------------------------------------------------------------------------------#
+
+PATH_PANEL_RAW <- file.path(DIR_PANEL, "panel_raw.rds")
+
+#------------------------------------------------------------------------------#
+# File paths — 06B_Feature_Eng.R
+#------------------------------------------------------------------------------#
+
+PATH_FEATURES_RAW <- file.path(DIR_FEATURES, "features_raw.rds")
+
+#------------------------------------------------------------------------------#
+# File paths — 06C_Autoencoder.R
+#------------------------------------------------------------------------------#
+
+PATH_FEATURES_LATENT <- file.path(DIR_FEATURES, "features_latent.rds")
+
+#------------------------------------------------------------------------------#
+# File paths — 07_Feature_Sel.R
+#------------------------------------------------------------------------------#
+
+PATH_FEATURES_SELECTED <- file.path(DIR_FEATURES, "features_selected.rds")
+
+#------------------------------------------------------------------------------#
+# File paths — 08_Split.R
+#------------------------------------------------------------------------------#
+
+PATH_SPLITS <- file.path(DIR_FEATURES, "splits.rds")
+
+#------------------------------------------------------------------------------#
+# File paths — 10_Evaluate.R
+#------------------------------------------------------------------------------#
+
+PATH_EVAL_RESULTS <- file.path(DIR_TABLES, "evaluation_results.rds")
+
+#------------------------------------------------------------------------------#
+# File paths — 11_Results.R
+#------------------------------------------------------------------------------#
+
+PATH_INDEX_RETURNS    <- file.path(DIR_TABLES,  "index_returns.rds")
+PATH_BACKTEST_SUMMARY <- file.path(DIR_TABLES,  "backtest_summary.rds")
+
+#------------------------------------------------------------------------------#
+# File paths — 12_Robustness.R
+#------------------------------------------------------------------------------#
+
+PATH_ROBUSTNESS <- file.path(DIR_TABLES, "robustness_results.rds")
 
 #==============================================================================#
 # 3. Date Range
@@ -199,11 +258,16 @@ MAX_CONSECUTIVE_NA <- 3L
 # 6. Feature Engineering
 #==============================================================================#
 
-WINDOW_SHORT <- 12L    # 1-year rolling window in months  (Approach 1)
-WINDOW_LONG  <- 60L    # 5-year rolling window in months  (Approach 2 — paper best)
+## Rolling window lengths in MONTHS (pipeline runs on monthly data)
+WINDOW_SHORT <- 12L    # 1-year rolling window  (Approach 1)
+WINDOW_LONG  <- 60L    # 5-year rolling window  (Approach 2 — paper best)
+
+## Reporting lag: months between fiscal year-end and public filing availability
+## Applied in 06_Merge.R when joining Compustat to the label panel.
+## Standard assumption: 3 months (10-K filed ~90 days after fiscal year-end).
+REPORTING_LAG_MONTHS <- 3L
 
 ## Aggregation functions applied per fundamental over the rolling window.
-## Each must be implemented in fn_rolling_stats.R
 ROLLING_STATS <- c(
   "mean",
   "min",

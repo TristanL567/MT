@@ -13,7 +13,7 @@
   "classifier_dims": [
     16
   ],
-  "beta": 3.0,
+  "beta": 1.0,
   "gamma": 0.1,
   "epochs": 150,
   "batch_size": 512,
@@ -21,6 +21,7 @@
   "weight_decay": 1e-05,
   "patience": 15,
   "kl_warmup": 20,
+  "val_fraction": 0.15,
   "seed": 123,
   "n_features": 461,
   "n_cont": 460,
@@ -490,5 +491,12 @@
   ],
   "binary_cols": [
     "recession"
+  ],
+  "pit_dist": "normal",
+  "fixes": [
+    "loss_reduction",
+    "pit_normal",
+    "val_early_stopping",
+    "bce_with_logits"
   ]
 }

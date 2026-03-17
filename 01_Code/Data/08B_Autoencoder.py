@@ -69,6 +69,23 @@ import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
+def clip_to_float32_safe(X: np.ndarray,
+                          quantile_low: float = 0.001,
+                          quantile_high: float = 0.999) -> np.ndarray:
+    """
+    Winsorise each feature to [q_low, q_high] computed on the full array,
+    then clip any remaining inf/nan to finite float32-safe values.
+    Applied before imputation — operates on raw float32 matrix.
+    """
+    X = np.where(np.isinf(X), np.nan, X)   # inf → NaN (handled by imputer)
+
+    # Winsorise column-wise using nanpercentile (ignores NaN)
+    lo = np.nanpercentile(X, quantile_low  * 100, axis=0)
+    hi = np.nanpercentile(X, quantile_high * 100, axis=0)
+    X  = np.clip(X, lo, hi)
+
+    return X.astype(np.float32)
+
 # ==============================================================================
 # 1. Paths  — update DATA_ROOT if MT/ project moves
 # ==============================================================================
@@ -118,7 +135,7 @@ CFG = {
     "kl_warmup"      : 20,            # Epochs to linearly ramp beta from 0→beta
 
     # Reproducibility
-    "seed"           : 42,
+    "seed"           : 123,
 }
 
 # ==============================================================================
@@ -188,7 +205,21 @@ print(f"  Total features : {n_features}")
 print(f"  Continuous     : {n_cont}")
 print(f"  Binary         : {n_binary}  {bin_cols}")
 
-# ── 5B. Split into train / test / OOS ─────────────────────────────────────────
+# ── 5B. Drop columns that are entirely NaN in any split ──────────────────────
+# These cannot be imputed or normalised and would break downstream steps.
+def get_valid_cols(df_tr, df_te, df_oo, cols):
+    valid = []
+    for c in cols:
+        if (df_tr[c].notna().any() and
+            df_te[c].notna().any() and
+            df_oo[c].notna().any()):
+            valid.append(c)
+    dropped = set(cols) - set(valid)
+    if dropped:
+        print(f"  Dropped {len(dropped)} all-NaN columns: "
+              f"{sorted(dropped)[:5]}{'...' if len(dropped) > 5 else ''}")
+    return valid
+
 train_df = df[df["split"] == "train"].copy().reset_index(drop=True)
 test_df  = df[df["split"] == "test"].copy().reset_index(drop=True)
 oos_df   = df[df["split"] == "oos"].copy().reset_index(drop=True)
@@ -198,42 +229,53 @@ print(f"  Train : {len(train_df):,} rows")
 print(f"  Test  : {len(test_df):,} rows")
 print(f"  OOS   : {len(oos_df):,} rows")
 
-X_train_raw = train_df[col_order].values.astype(np.float32)
-X_test_raw  = test_df[col_order].values.astype(np.float32)
-X_oos_raw   = oos_df[col_order].values.astype(np.float32)
+# Re-derive col_order after dropping all-NaN columns
+cont_cols  = get_valid_cols(train_df, test_df, oos_df, cont_cols)
+bin_cols   = get_valid_cols(train_df, test_df, oos_df, bin_cols)
+col_order  = cont_cols + bin_cols
+n_cont     = len(cont_cols)
+n_binary   = len(bin_cols)
+n_features = len(col_order)
+
+print(f"  Features after dropping all-NaN cols: {n_features}")
+
+X_train_raw = clip_to_float32_safe(
+    train_df[col_order].values.astype(np.float64))
+X_test_raw  = clip_to_float32_safe(
+    test_df[col_order].values.astype(np.float64))
+X_oos_raw   = clip_to_float32_safe(
+    oos_df[col_order].values.astype(np.float64))
 
 y_train = train_df["y"].values.astype(np.float32)
 y_test  = test_df["y"].values.astype(np.float32)
 
-# ── 5C. Imputation — fitted on train only ─────────────────────────────────────
-# consec_decline_* are count features (0, 1, 2, ...) — impute with 0
-# All other features — impute with train-set median
+# ── 5C. Imputation — fitted on train only ────────────────────────────────────
 consec_cols = [c for c in col_order if c.startswith("consec_decline_")]
 other_cols  = [c for c in col_order if c not in consec_cols]
 
-consec_idx = [col_order.index(c) for c in consec_cols]
-other_idx  = [col_order.index(c) for c in other_cols]
+# Use boolean masks instead of index lists — avoids shape mismatch
+consec_mask = np.array([c in consec_cols for c in col_order])
+other_mask  = ~consec_mask
 
 imputer_median = SimpleImputer(strategy="median")
 imputer_zero   = SimpleImputer(strategy="constant", fill_value=0.0)
 
 def impute_splits(X_tr, X_te, X_oo):
-    """Fit imputers on train only, apply to all splits."""
     out_tr = X_tr.copy()
     out_te = X_te.copy()
     out_oo = X_oo.copy()
 
-    if other_idx:
-        imputer_median.fit(X_tr[:, other_idx])
-        out_tr[:, other_idx] = imputer_median.transform(X_tr[:, other_idx])
-        out_te[:, other_idx] = imputer_median.transform(X_te[:, other_idx])
-        out_oo[:, other_idx] = imputer_median.transform(X_oo[:, other_idx])
+    if other_mask.any():
+        imputer_median.fit(X_tr[:, other_mask])
+        out_tr[:, other_mask] = imputer_median.transform(X_tr[:, other_mask])
+        out_te[:, other_mask] = imputer_median.transform(X_te[:, other_mask])
+        out_oo[:, other_mask] = imputer_median.transform(X_oo[:, other_mask])
 
-    if consec_idx:
-        imputer_zero.fit(X_tr[:, consec_idx])
-        out_tr[:, consec_idx] = imputer_zero.transform(X_tr[:, consec_idx])
-        out_te[:, consec_idx] = imputer_zero.transform(X_te[:, consec_idx])
-        out_oo[:, consec_idx] = imputer_zero.transform(X_oo[:, consec_idx])
+    if consec_mask.any():
+        imputer_zero.fit(X_tr[:, consec_mask])
+        out_tr[:, consec_mask] = imputer_zero.transform(X_tr[:, consec_mask])
+        out_te[:, consec_mask] = imputer_zero.transform(X_te[:, consec_mask])
+        out_oo[:, consec_mask] = imputer_zero.transform(X_oo[:, consec_mask])
 
     return out_tr, out_te, out_oo
 

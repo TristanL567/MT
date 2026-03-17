@@ -259,8 +259,8 @@ MAX_CONSECUTIVE_NA <- 3L
 #==============================================================================#
 
 ## Rolling window lengths in MONTHS (pipeline runs on monthly data)
-WINDOW_SHORT <- 12L    # 1-year rolling window  (Approach 1)
-WINDOW_LONG  <- 60L    # 5-year rolling window  (Approach 2 — paper best)
+WINDOW_SHORT <- 36L   # 3 years in months — minimum for meaningful rolling stats
+WINDOW_LONG  <- 60L   # 5 years unchanged
 
 ## Reporting lag: months between fiscal year-end and public filing availability
 ## Applied in 06_Merge.R when joining Compustat to the label panel.

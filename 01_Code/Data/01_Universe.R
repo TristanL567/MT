@@ -20,7 +20,7 @@ setwd(Directory)
 packages <- c("here", "xts", "dplyr", "tidyr",
               "RPostgres", "tidyverse", "tidyfinance", "scales",
               "RSQLite", "dbplyr", "lubridate", "data.table",
-              "slider"
+              "slider", "arrow"
 )
 
 for(i in 1:length(packages)){

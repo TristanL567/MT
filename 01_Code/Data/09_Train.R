@@ -266,22 +266,34 @@ fn_train_xgboost <- function(
   ))
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4A. Build train / test / OOS subsets (exclude y=NA)
+  ## 4A. Build train / test / OOS subsets
+  ##     features(t) predict y(t+1) — one-year-ahead prediction
   ##──────────────────────────────────────────────────────────────────────────##
   
   oot_split <- splits$oot$split_col
   panel_dt[, split_oot := oot_split]
   
-  train_full <- panel_dt[split_oot == "train" & !is.na(y)]
-  test_set   <- panel_dt[split_oot == "test"  & !is.na(y)]
-  oos_set    <- panel_dt[split_oot == "oos"   & !is.na(y)]
+  ## Compute y(t+1) for each firm — sorted by permno, year
+  panel_dt <- panel_dt[order(permno, year)]
+  panel_dt[, y_next := shift(y, n = 1L, type = "lead"), by = permno]
+  
+  ## Filter to rows where y(t+1) is a valid label (not NA)
+  ## This excludes: last year per firm, zombie next years
+  train_full <- panel_dt[split_oot == "train" & !is.na(y_next)]
+  test_set   <- panel_dt[split_oot == "test"  & !is.na(y_next)]
+  oos_set    <- panel_dt[split_oot == "oos"   & !is.na(y_next)]
+  
+  y_train <- as.integer(train_full$y_next)
+  y_test  <- as.integer(test_set$y_next)
+  y_oos   <- as.integer(oos_set$y_next)
+  
+  ## Verify labels are clean
+  stopifnot(!anyNA(y_train), all(y_train %in% c(0L, 1L)))
+  stopifnot(!anyNA(y_test),  all(y_test  %in% c(0L, 1L)))
+  stopifnot(!anyNA(y_oos),   all(y_oos   %in% c(0L, 1L)))
   
   cat(sprintf("  Train (labelled): %d | Test: %d | OOS: %d\n",
               nrow(train_full), nrow(test_set), nrow(oos_set)))
-  
-  y_train <- as.integer(train_full$y)
-  y_test  <- as.integer(test_set$y)
-  y_oos   <- as.integer(oos_set$y)
   
   X_train_mat <- as.matrix(train_full[, ..feature_cols])
   X_test_mat  <- as.matrix(test_set[,  ..feature_cols])
@@ -315,25 +327,21 @@ fn_train_xgboost <- function(
   doos        <- xgb.DMatrix(data = X_oos_qt,   label = y_oos)
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4C. Build CV fold indices for xgb.cv
-  ##
-  ##   OOT fold indices are relative to the full panel (including y=NA rows).
-  ##   Must remap to 0-indexed positions within train_full (labelled only).
-  ##   xgb.cv folds parameter = list of 0-indexed validation row indices.
-  ##   Fold 1 skipped — zero training rows.
+  ## 4C. Build CV fold indices
+  ##     CRITICAL: train_full_rows must use y_next filter, not y filter
   ##──────────────────────────────────────────────────────────────────────────##
   
   cat("  Building CV fold indices...\n")
   
-  train_full_rows <- which(oot_split == "train" & !is.na(panel_dt$y))
+  ## Must exactly match train_full row selection above
+  train_full_rows <- which(oot_split == "train" & !is.na(panel_dt$y_next))
   
-  ## Position map: panel row → 0-indexed position in train_full
   panel_to_pos <- integer(nrow(panel_dt))
   panel_to_pos[train_full_rows] <- seq_along(train_full_rows) - 1L
   
-  cv_folds_raw  <- splits$oot$cv_folds
-  xgb_folds     <- list()
-  valid_fold_ids <- integer(0)
+  cv_folds_raw   <- splits$oot$cv_folds
+  xgb_folds      <- list()
+  valid_fold_ids  <- integer(0)
   
   for (k in seq_along(cv_folds_raw)) {
     
@@ -631,18 +639,18 @@ fn_train_xgboost <- function(
     
     ## Predictions
     preds = list(
-      train = data.table(permno = train_full$permno,
-                         year   = train_full$year,
-                         y      = y_train,
-                         p_csi  = preds_train),
-      test  = data.table(permno = test_set$permno,
-                         year   = test_set$year,
-                         y      = y_test,
-                         p_csi  = preds_test),
-      oos   = data.table(permno = oos_set$permno,
-                         year   = oos_set$year,
-                         y      = y_oos,
-                         p_csi  = preds_oos)
+      train = data.table(permno    = train_full$permno,
+                         year      = train_full$year,    # Feature year t
+                         y         = y_train,            # Label = y(t+1)
+                         p_csi     = preds_train),
+      test  = data.table(permno    = test_set$permno,
+                         year      = test_set$year,
+                         y         = y_test,
+                         p_csi     = preds_test),
+      oos   = data.table(permno    = oos_set$permno,
+                         year      = oos_set$year,
+                         y         = y_oos,
+                         p_csi     = preds_oos)
     ),
     
     ## Evaluation

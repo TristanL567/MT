@@ -17,10 +17,26 @@ setwd(Directory)
 
 ## Needs to enable checking for install & if not then autoinstall.
 
-packages <- c("here", "xts", "dplyr", "tidyr",
-              "RPostgres", "tidyverse", "tidyfinance", "scales",
-              "RSQLite", "dbplyr", "lubridate", "data.table",
-              "slider", "arrow", "PRROC", "ggplot2", "fredr"
+packages <- c(
+  
+  ## Core data manipulation
+  "dplyr", "tidyr", "tidyverse", "lubridate", "data.table",
+  ## Database & WRDS
+  "RPostgres", "RSQLite", "dbplyr", "tidyfinance",
+  ## FRED & macroeconomic data
+  "fredr",
+  ## File I/O & utilities
+  "here", "arrow",
+  ## Time series
+  "xts", "slider",
+  ## Machine learning & optimisation
+  "xgboost", "rBayesianOptimization",
+  ## Model evaluation & statistics
+  "pROC", "PRROC",
+  ## Visualisation
+  "ggplot2", "scales",
+  ## Sparse matrices
+  "Matrix"
 )
 
 for(i in 1:length(packages)){

@@ -119,7 +119,7 @@ PATH_FEATURES_RAW <- file.path(DIR_FEATURES, "features_raw.rds")
 # File paths — 06C_Autoencoder.R
 #------------------------------------------------------------------------------#
 
-PATH_FEATURES_LATENT <- file.path(DIR_FEATURES, "features_latent.rds")
+PATH_FEATURES_LATENT <- file.path(DIR_FEATURES, "features_latent.parquet")
 
 #------------------------------------------------------------------------------#
 # File paths — 07_Feature_Sel.R

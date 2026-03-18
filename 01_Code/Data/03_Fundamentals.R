@@ -65,13 +65,6 @@
 
 source("config.R")
 
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(dbplyr)
-  library(lubridate)
-  library(data.table)
-})
-
 cat("\n[03_Fundamentals.R] START:", format(Sys.time()), "\n")
 
 #==============================================================================#

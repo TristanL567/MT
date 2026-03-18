@@ -77,14 +77,6 @@
 
 source("config.R")
 
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(tidyr)
-  library(lubridate)
-  library(data.table)
-  library(ggplot2)
-})
-
 cat("\n[06_Merge.R] START:", format(Sys.time()), "\n")
 
 #==============================================================================#

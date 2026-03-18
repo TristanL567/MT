@@ -54,13 +54,6 @@
 
 source("config.R")
 
-suppressPackageStartupMessages({
-  library(data.table)
-  library(lubridate)
-  library(dplyr)
-  library(ggplot2)
-})
-
 cat("\n[05_CSI_Label.R] START:", format(Sys.time()), "\n")
 
 #==============================================================================#

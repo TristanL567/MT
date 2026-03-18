@@ -67,13 +67,6 @@
 
 source("config.R")
 
-suppressPackageStartupMessages({
-  library(data.table)
-  library(dplyr)
-  library(lubridate)
-  library(slider)       # Rolling window functions
-})
-
 cat("\n[06B_Feature_Eng.R] START:", format(Sys.time()), "\n")
 
 #==============================================================================#

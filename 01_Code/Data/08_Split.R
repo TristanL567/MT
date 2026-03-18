@@ -80,12 +80,6 @@
 
 source("config.R")
 
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(data.table)
-  library(ggplot2)
-})
-
 cat("\n[08_Split.R] START:", format(Sys.time()), "\n")
 
 #==============================================================================#

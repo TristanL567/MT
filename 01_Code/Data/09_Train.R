@@ -28,57 +28,48 @@
 #
 # CV DESIGN — EXPANDING WINDOW (not standard k-fold):
 #
-#   Standard k-fold rotates the holdout set across all folds and trains on
-#   all remaining folds. This is WRONG for time series because a fold could
-#   train on years after its validation period, introducing look-ahead bias.
-#
 #   Expanding window CV trains on all years up to fold k, validates on the
 #   next year block. Training set grows with each fold:
 #
 #     Fold 2: train [1998–2001] → validate [2002–2006]
 #     Fold 3: train [1998–2006] → validate [2007–2010]
 #     Fold 4: train [1998–2010] → validate [2011–2015]
-#     Fold 5: train [1998–2015] → validate ... (extends to test boundary)
+#     Fold 5: train [1998–2015] → validate (to test boundary)
 #
-#   Fold 1 is skipped — zero training rows (1993–1997 only, no prior history).
+#   Fold 1 skipped — zero training rows.
 #
-#   CV metrics reported are from the FINAL model (best HPO params, optimal
-#   nrounds) evaluated on all 4 expanding window folds. This is the honest
-#   out-of-sample estimate of the selected model's expected performance.
+# LABEL SHIFT:
+#   features(t) predict y(t+1) — one year ahead.
+#   Prevents contemporaneous leakage from price features (max_dd_12m)
+#   into the CSI label which is triggered by the same price decline.
 #
 # DESIGN DECISIONS:
-#
-#   [1] FOLD 1 SKIPPED in CV:
-#       Zero training rows — cannot train. HPO uses folds 2–5 (4 folds).
-#
-#   [2] QUANTILE TRANSFORM (uniform [0,1]) fitted on full train set:
-#       Applied to test and OOS using training ECDF — no leakage.
-#       NA values imputed with column training median before transform.
-#
-#   [3] AVERAGE PRECISION as HPO and evaluation metric:
-#       XGBoost native eval_metric = "aucpr" for HPO.
-#       Post-hoc Average Precision computed via PRROC::pr.curve()
-#       (area under precision-recall curve — not AUC-ROC).
-#
-#   [4] SCALE_POS_WEIGHT computed from full training set:
-#       n_neg / n_pos — corrects for 10% CSI prevalence.
-#
-#   [5] y=NA ROWS EXCLUDED from training and evaluation:
-#       Zombie/censored rows retained through pipeline for autoencoder
-#       but excluded here — no label available for supervised training.
-#
-#   [6] BAYESIAN OPTIMISATION via rBayesianOptimization:
-#       UCB acquisition, kappa=2.576. 10 init + 20 Bayes = 30 total.
-#
-#   [7] TWO FEATURE SETS run in sequence and compared.
-#
-#   [8] CV METRICS from final model (Step 5E), not from HPO iterations.
-#       cv_final re-runs xgb.cv with best params at optimal nrounds.
-#       Per-fold AUCPR breakdown printed for stability assessment.
+#   [1] Fold 1 skipped — zero training rows.
+#   [2] QT uniform [0,1] fitted on full train, applied to test/OOS.
+#   [3] Average Precision (AUCPR) as HPO metric.
+#   [4] scale_pos_weight = n_neg/n_pos corrects class imbalance.
+#   [5] y=NA rows excluded — no label for supervised training.
+#   [6] Bayesian HPO: UCB kappa=2.576, 10 init + 20 Bayes = 30 total.
+#   [7] Two feature sets run in sequence and compared.
+#   [8] CV metrics from final model cv_final, not from HPO iterations.
+#   [9] Split labels joined by (permno, year) for latent features —
+#       safe regardless of row order after parquet round-trip from Python.
 #
 #==============================================================================#
 
 source("config.R")
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(data.table)
+  library(xgboost)
+  library(rBayesianOptimization)
+  library(pROC)
+  library(PRROC)
+  library(arrow)
+  library(Matrix)
+  library(tidyr)
+})
 
 cat("\n[09_Train.R] START:", format(Sys.time()), "\n")
 
@@ -113,18 +104,15 @@ cat(sprintf("  features_latent : %d rows, %d cols\n",
 # 2. Define feature column sets
 #==============================================================================#
 
-## Identifier and label columns — never used as features
 ID_COLS <- c("permno", "year", "y", "censored", "param_id",
              "gvkey", "datadate", "lifetime_years",
-             "fiscal_year_end_month", "split", "vae_split")
+             "fiscal_year_end_month", "split", "vae_split", "split_oot")
 
-## Raw feature columns — all numeric columns except identifiers
 RAW_FEATURE_COLS <- setdiff(
   names(features_raw)[sapply(features_raw, is.numeric)],
   ID_COLS
 )
 
-## Latent feature columns — z1..z24 + reconstruction error
 LATENT_FEATURE_COLS <- intersect(
   c(paste0("z", seq_len(24)), "vae_recon_error"),
   names(features_latent)
@@ -137,43 +125,31 @@ cat(sprintf("  Latent features : %d columns\n", length(LATENT_FEATURE_COLS)))
 # 3. Utility functions
 #==============================================================================#
 
-##──────────────────────────────────────────────────────────────────────────────
-## 3A. Quantile Transform — uniform [0,1]
-##
-##   Fits rank-based ECDF on train_mat column-wise.
-##   Applies to additional matrices using the training ECDF.
-##   NAs imputed with training column median before transformation.
-##   Output values lie in the open interval (epsilon, 1-epsilon).
-##──────────────────────────────────────────────────────────────────────────────
-
 fn_quantile_transform <- function(train_mat, apply_mats = list()) {
   
   train_mat <- as.matrix(train_mat)
   n_cols    <- ncol(train_mat)
   n_train   <- nrow(train_mat)
-  epsilon   <- 0.5 / n_train   # Open-interval boundary — no 0 or 1
+  epsilon   <- 0.5 / n_train
   
   train_out  <- matrix(NA_real_, nrow = n_train, ncol = n_cols)
   apply_outs <- lapply(apply_mats, function(m)
     matrix(NA_real_, nrow = nrow(m), ncol = n_cols))
   
   for (j in seq_len(n_cols)) {
-    
     x_tr   <- train_mat[, j]
     med_tr <- median(x_tr, na.rm = TRUE)
     if (is.na(med_tr)) med_tr <- 0
     x_tr[is.na(x_tr)] <- med_tr
     
-    ## Rank-based uniform transform for training rows
-    ranks           <- rank(x_tr, ties.method = "average")
-    train_out[, j]  <- (ranks - 0.5) / length(ranks)
+    ranks          <- rank(x_tr, ties.method = "average")
+    train_out[, j] <- (ranks - 0.5) / length(ranks)
     
-    ## Apply to other matrices via training ECDF
     ecdf_fn <- ecdf(x_tr)
     for (k in seq_along(apply_mats)) {
-      x_ap               <- as.matrix(apply_mats[[k]])[, j]
-      x_ap[is.na(x_ap)] <- med_tr
-      probs              <- ecdf_fn(x_ap)
+      x_ap                 <- as.matrix(apply_mats[[k]])[, j]
+      x_ap[is.na(x_ap)]   <- med_tr
+      probs                <- ecdf_fn(x_ap)
       apply_outs[[k]][, j] <- pmax(epsilon, pmin(probs, 1 - epsilon))
     }
   }
@@ -185,35 +161,16 @@ fn_quantile_transform <- function(train_mat, apply_mats = list()) {
   list(train = train_out, applied = apply_outs)
 }
 
-##──────────────────────────────────────────────────────────────────────────────
-## 3B. Average Precision — PRROC::pr.curve()
-##
-##   Area under the Precision-Recall curve.
-##   This is the correct implementation — NOT AUC-ROC.
-##   PRROC::pr.curve() requires separate positive/negative score vectors.
-##   scores.class0 = predictions for POSITIVE class (y=1)
-##   scores.class1 = predictions for NEGATIVE class (y=0)
-##   auc.integral  = interpolated area under PR curve
-##──────────────────────────────────────────────────────────────────────────────
-
 fn_avg_precision <- function(y_true, y_pred) {
   tryCatch({
     pr_obj <- PRROC::pr.curve(
-      scores.class0 = y_pred[y_true == 1L],   # Scores for positives
-      scores.class1 = y_pred[y_true == 0L],   # Scores for negatives
+      scores.class0 = y_pred[y_true == 1L],
+      scores.class1 = y_pred[y_true == 0L],
       curve         = FALSE
     )
     pr_obj$auc.integral
   }, error = function(e) NA_real_)
 }
-
-##──────────────────────────────────────────────────────────────────────────────
-## 3C. Recall at fixed FPR
-##
-##   Primary thesis metric: maximum recall achievable at FPR <= fpr_target.
-##   Traverses ROC curve to find all operating points where FPR <= threshold,
-##   then takes the maximum recall among those points.
-##──────────────────────────────────────────────────────────────────────────────
 
 fn_recall_at_fpr <- function(y_true, y_pred, fpr_target) {
   roc_obj     <- pROC::roc(y_true, y_pred, quiet = TRUE)
@@ -224,20 +181,16 @@ fn_recall_at_fpr <- function(y_true, y_pred, fpr_target) {
   max(recall_vals[eligible])
 }
 
-##──────────────────────────────────────────────────────────────────────────────
-## 3D. Full evaluation metric set
-##──────────────────────────────────────────────────────────────────────────────
-
 fn_eval_metrics <- function(y_true, y_pred, feature_set_name, set_name) {
   data.frame(
     feature_set   = feature_set_name,
     set           = set_name,
     auc_roc       = round(as.numeric(pROC::auc(
       pROC::roc(y_true, y_pred, quiet = TRUE))), 4),
-    avg_precision = round(fn_avg_precision(y_true, y_pred),            4),
-    recall_fpr3   = round(fn_recall_at_fpr(y_true, y_pred, 0.03),      4),
-    recall_fpr5   = round(fn_recall_at_fpr(y_true, y_pred, 0.05),      4),
-    brier         = round(mean((y_pred - y_true)^2),                   4),
+    avg_precision = round(fn_avg_precision(y_true, y_pred),       4),
+    recall_fpr3   = round(fn_recall_at_fpr(y_true, y_pred, 0.03), 4),
+    recall_fpr5   = round(fn_recall_at_fpr(y_true, y_pred, 0.05), 4),
+    brier         = round(mean((y_pred - y_true)^2),              4),
     stringsAsFactors = FALSE
   )
 }
@@ -266,19 +219,41 @@ fn_train_xgboost <- function(
   ))
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4A. Build train / test / OOS subsets
-  ##     features(t) predict y(t+1) — one-year-ahead prediction
+  ## 4A. Assign split labels
+  ##
+  ##   For raw features: positional assignment from splits$oot$split_col
+  ##   is safe because features_raw row order matches splits exactly.
+  ##
+  ##   For latent features: split_oot was pre-joined by (permno, year)
+  ##   in Section 6 before this function is called. Use that column
+  ##   directly — do NOT overwrite with positional assignment.
+  ##
+  ##   oot_split is derived from panel_dt$split_oot in both cases so
+  ##   all downstream references to oot_split work identically.
   ##──────────────────────────────────────────────────────────────────────────##
   
-  oot_split <- splits$oot$split_col
-  panel_dt[, split_oot := oot_split]
+  if (!"split_oot" %in% names(panel_dt)) {
+    ## Raw features path — positional assignment is safe
+    panel_dt[, split_oot := splits$oot$split_col]
+    cat("  Split assigned positionally.\n")
+  } else {
+    cat("  Using pre-joined split_oot column.\n")
+  }
   
-  ## Compute y(t+1) for each firm — sorted by permno, year
+  ## Derive oot_split vector from the column — used in 4C for row indexing
+  oot_split <- panel_dt$split_oot
+  
+  ##──────────────────────────────────────────────────────────────────────────##
+  ## 4B. Build train / test / OOS subsets
+  ##     features(t) predict y(t+1) — one-year-ahead, no leakage
+  ##──────────────────────────────────────────────────────────────────────────##
+  
   panel_dt <- panel_dt[order(permno, year)]
   panel_dt[, y_next := shift(y, n = 1L, type = "lead"), by = permno]
   
-  ## Filter to rows where y(t+1) is a valid label (not NA)
-  ## This excludes: last year per firm, zombie next years
+  ## Re-derive oot_split after reorder — order may have changed
+  oot_split <- panel_dt$split_oot
+  
   train_full <- panel_dt[split_oot == "train" & !is.na(y_next)]
   test_set   <- panel_dt[split_oot == "test"  & !is.na(y_next)]
   oos_set    <- panel_dt[split_oot == "oos"   & !is.na(y_next)]
@@ -287,7 +262,7 @@ fn_train_xgboost <- function(
   y_test  <- as.integer(test_set$y_next)
   y_oos   <- as.integer(oos_set$y_next)
   
-  ## Verify labels are clean
+  ## Verify labels are clean — no NAs, only 0/1
   stopifnot(!anyNA(y_train), all(y_train %in% c(0L, 1L)))
   stopifnot(!anyNA(y_test),  all(y_test  %in% c(0L, 1L)))
   stopifnot(!anyNA(y_oos),   all(y_oos   %in% c(0L, 1L)))
@@ -300,7 +275,7 @@ fn_train_xgboost <- function(
   X_oos_mat   <- as.matrix(oos_set[,   ..feature_cols])
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4B. Quantile transform — fitted on full train, applied to test/OOS
+  ## 4C. Quantile transform — fitted on full train, applied to test/OOS
   ##──────────────────────────────────────────────────────────────────────────##
   
   cat("  Applying quantile transform (full train → test, OOS)...\n")
@@ -313,7 +288,6 @@ fn_train_xgboost <- function(
   X_test_qt  <- qt_full$applied[["test"]]
   X_oos_qt   <- qt_full$applied[["oos"]]
   
-  ## Class imbalance weight
   n_neg_full       <- sum(y_train == 0L)
   n_pos_full       <- sum(y_train == 1L)
   scale_pos_weight <- n_neg_full / n_pos_full
@@ -321,19 +295,23 @@ fn_train_xgboost <- function(
   cat(sprintf("  Class balance — neg: %d | pos: %d | weight: %.2f\n",
               n_neg_full, n_pos_full, scale_pos_weight))
   
-  ## DMatrices for final model
   dtrain_full <- xgb.DMatrix(data = X_train_qt, label = y_train)
   dtest       <- xgb.DMatrix(data = X_test_qt,  label = y_test)
   doos        <- xgb.DMatrix(data = X_oos_qt,   label = y_oos)
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4C. Build CV fold indices
-  ##     CRITICAL: train_full_rows must use y_next filter, not y filter
+  ## 4D. Build CV fold indices
+  ##
+  ##   OOT fold indices from splits$oot$cv_folds are relative to the full
+  ##   panel. Must remap to 0-indexed positions within train_full.
+  ##
+  ##   CRITICAL: train_full_rows must use the same y_next filter as
+  ##   train_full above — NOT the old !is.na(y) filter.
+  ##   Uses oot_split which was re-derived after reorder in 4B.
   ##──────────────────────────────────────────────────────────────────────────##
   
   cat("  Building CV fold indices...\n")
   
-  ## Must exactly match train_full row selection above
   train_full_rows <- which(oot_split == "train" & !is.na(panel_dt$y_next))
   
   panel_to_pos <- integer(nrow(panel_dt))
@@ -372,7 +350,7 @@ fn_train_xgboost <- function(
   cat(sprintf("  Using %d CV folds for HPO\n", length(xgb_folds)))
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4D. Bayesian HPO
+  ## 4E. Bayesian HPO
   ##──────────────────────────────────────────────────────────────────────────##
   
   cat("\n[09_Train.R] Starting Bayesian HPO...\n")
@@ -470,12 +448,7 @@ fn_train_xgboost <- function(
   print(head(bo_history, 3))
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4E. Final model — optimal nrounds via CV, then train on full train set
-  ##
-  ##   cv_final runs xgb.cv with best parameters across all 4 expanding
-  ##   window folds. The per-fold AUCPR at optimal_rounds IS the honest
-  ##   CV estimate of the final selected model — not the HPO iterations.
-  ##   This addresses design note [8]: CV metrics from the final model.
+  ## 4F. Final model
   ##──────────────────────────────────────────────────────────────────────────##
   
   cat("\n[09_Train.R] Training final model...\n")
@@ -499,7 +472,6 @@ fn_train_xgboost <- function(
     nthread          = nthread
   )
   
-  ## CV with final params — determines optimal nrounds AND honest CV metrics
   cat("  Finding optimal nrounds (final CV)...\n")
   cv_final <- xgb.cv(
     params                = final_params,
@@ -523,33 +495,22 @@ fn_train_xgboost <- function(
   cat(sprintf("  CV AUCPR (mean): %.4f\n", cv_aucpr_mean))
   cat(sprintf("  CV AUCPR (sd)  : %.4f\n", cv_aucpr_sd))
   
-  ## Per-fold AUCPR breakdown at optimal_rounds
-  ## This shows stability of the model across different time periods
   cat("\n  Per-fold AUCPR breakdown at optimal rounds:\n")
-  log_at_opt <- cv_final$evaluation_log[iter == optimal_rounds]
-  
-  ## xgb.cv stores per-fold metrics only when verbosity allows it
-  ## Mean and SD are always available; individual fold columns depend on version
-  fold_col_names <- grep(
-    "^test_aucpr_(?!mean|std)",
-    names(cv_final$evaluation_log),
-    perl  = TRUE,
-    value = TRUE
-  )
+  log_at_opt     <- cv_final$evaluation_log[iter == optimal_rounds]
+  fold_col_names <- grep("^test_aucpr_(?!mean|std)",
+                         names(cv_final$evaluation_log),
+                         perl = TRUE, value = TRUE)
   
   if (length(fold_col_names) > 0) {
-    for (i in seq_along(fold_col_names)) {
-      fold_val <- log_at_opt[[fold_col_names[i]]]
+    for (i in seq_along(fold_col_names))
       cat(sprintf("    Fold %d AUCPR : %.4f\n",
-                  valid_fold_ids[i], fold_val))
-    }
+                  valid_fold_ids[i], log_at_opt[[fold_col_names[i]]]))
   } else {
     cat("    (Per-fold breakdown not available in this xgboost version)\n")
   }
   cat(sprintf("    Mean AUCPR   : %.4f (+/- %.4f)\n",
               cv_aucpr_mean, cv_aucpr_sd))
   
-  ## Train final model on full training set at optimal_rounds
   model_final <- xgb.train(
     params  = final_params,
     data    = dtrain_full,
@@ -558,7 +519,7 @@ fn_train_xgboost <- function(
   )
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4F. Predictions
+  ## 4G. Predictions
   ##──────────────────────────────────────────────────────────────────────────##
   
   cat("[09_Train.R] Generating predictions...\n")
@@ -568,7 +529,7 @@ fn_train_xgboost <- function(
   preds_oos   <- predict(model_final, doos)
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4G. Evaluation
+  ## 4H. Evaluation
   ##──────────────────────────────────────────────────────────────────────────##
   
   metrics_train <- fn_eval_metrics(y_train, preds_train,
@@ -578,7 +539,6 @@ fn_train_xgboost <- function(
   metrics_oos   <- fn_eval_metrics(y_oos,   preds_oos,
                                    feature_set_name, "oos")
   
-  ## CV metrics row — from cv_final, not from HPO iterations
   metrics_cv <- data.frame(
     feature_set   = feature_set_name,
     set           = "cv_expanding_window",
@@ -596,10 +556,8 @@ fn_train_xgboost <- function(
   print(eval_table, row.names = FALSE)
   
   cat(sprintf(
-    paste0(
-      "\n  [%s] CV AUCPR: %.4f | Test AP: %.4f | ",
-      "Test AUC-ROC: %.4f | Test R@FPR5: %.4f\n"
-    ),
+    paste0("\n  [%s] CV AUCPR: %.4f | Test AP: %.4f | ",
+           "Test AUC-ROC: %.4f | Test R@FPR5: %.4f\n"),
     toupper(feature_set_name),
     cv_aucpr_mean,
     metrics_test$avg_precision,
@@ -608,7 +566,7 @@ fn_train_xgboost <- function(
   ))
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4H. Feature importance
+  ## 4I. Feature importance
   ##──────────────────────────────────────────────────────────────────────────##
   
   importance_mat <- xgb.importance(
@@ -620,44 +578,33 @@ fn_train_xgboost <- function(
   print(head(importance_mat[order(-importance_mat$Gain), ], 10L))
   
   ##──────────────────────────────────────────────────────────────────────────##
-  ## 4I. Return
+  ## 4J. Return
   ##──────────────────────────────────────────────────────────────────────────##
   
   list(
-    ## Model
     model          = model_final,
     optimal_rounds = optimal_rounds,
     params         = final_params,
-    
-    ## HPO
     bo_history     = bo_history,
-    
-    ## CV metrics — from final model, not HPO iterations
     cv_aucpr_mean  = cv_aucpr_mean,
     cv_aucpr_sd    = cv_aucpr_sd,
     cv_log         = cv_final$evaluation_log,
-    
-    ## Predictions
     preds = list(
-      train = data.table(permno    = train_full$permno,
-                         year      = train_full$year,    # Feature year t
-                         y         = y_train,            # Label = y(t+1)
-                         p_csi     = preds_train),
-      test  = data.table(permno    = test_set$permno,
-                         year      = test_set$year,
-                         y         = y_test,
-                         p_csi     = preds_test),
-      oos   = data.table(permno    = oos_set$permno,
-                         year      = oos_set$year,
-                         y         = y_oos,
-                         p_csi     = preds_oos)
+      train = data.table(permno = train_full$permno,
+                         year   = train_full$year,
+                         y      = y_train,
+                         p_csi  = preds_train),
+      test  = data.table(permno = test_set$permno,
+                         year   = test_set$year,
+                         y      = y_test,
+                         p_csi  = preds_test),
+      oos   = data.table(permno = oos_set$permno,
+                         year   = oos_set$year,
+                         y      = y_oos,
+                         p_csi  = preds_oos)
     ),
-    
-    ## Evaluation
-    eval_table   = eval_table,
-    importance   = importance_mat,
-    
-    ## Meta
+    eval_table       = eval_table,
+    importance       = importance_mat,
     feature_set      = feature_set_name,
     feature_cols     = feature_cols,
     n_features       = length(feature_cols),
@@ -686,14 +633,39 @@ cat("[09_Train.R] xgb_raw.rds saved.\n")
 
 #==============================================================================#
 # 6. Feature Set B — Latent features
+#
+#   split_oot joined by (permno, year) — safe regardless of row order
+#   after parquet round-trip from Python. The function detects the
+#   pre-joined column and uses it directly without positional override.
 #==============================================================================#
 
 cat("\n[09_Train.R] ══════════════════════════════════════\n")
 cat("  FEATURE SET B: Latent features\n")
 cat("[09_Train.R] ══════════════════════════════════════\n")
 
-## Rename split column to avoid conflict with split_oot assigned inside function
+## Rename Python split column to avoid conflict with split_oot
 setnames(features_latent, "split", "vae_split", skip_absent = TRUE)
+
+## Build split reference from features_raw (guaranteed correct order)
+split_ref <- data.table(
+  permno    = features_raw$permno,
+  year      = features_raw$year,
+  split_oot = splits$oot$split_col
+)
+
+## Join split labels onto latent features by (permno, year)
+features_latent <- merge(
+  features_latent,
+  split_ref,
+  by    = c("permno", "year"),
+  all.x = TRUE
+)
+
+n_missing <- sum(is.na(features_latent$split_oot))
+cat(sprintf("  Latent rows        : %d\n", nrow(features_latent)))
+cat(sprintf("  split_oot NA count : %d (should be 0)\n", n_missing))
+if (n_missing > 0)
+  stop("[09_Train.R] split_oot join failed — check permno/year alignment.")
 
 result_latent <- fn_train_xgboost(
   feature_set_name = "latent",
@@ -725,7 +697,6 @@ cat("\n[09_Train.R] evaluation_results.rds saved.\n")
 
 cat("[09_Train.R] Running assertions...\n")
 
-## A) Predictions exist for all sets
 for (nm in c("raw", "latent")) {
   res <- if (nm == "raw") result_raw else result_latent
   stopifnot(
@@ -735,31 +706,19 @@ for (nm in c("raw", "latent")) {
   )
 }
 
-## B) No NA predictions
 stopifnot(
   !anyNA(result_raw$preds$test$p_csi),
-  !anyNA(result_latent$preds$test$p_csi)
-)
-
-## C) Predictions in [0, 1]
-stopifnot(
+  !anyNA(result_latent$preds$test$p_csi),
   all(between(result_raw$preds$test$p_csi,    0, 1)),
-  all(between(result_latent$preds$test$p_csi, 0, 1))
-)
-
-## D) CV AUCPR plausible (> prevalence = ~0.12)
-stopifnot(
+  all(between(result_latent$preds$test$p_csi, 0, 1)),
   result_raw$cv_aucpr_mean    > 0.12,
   result_latent$cv_aucpr_mean > 0.12
 )
 
-## E) avg_precision and auc_roc are different (confirms PRROC fix worked)
 raw_test <- result_raw$eval_table[result_raw$eval_table$set == "test", ]
-if (!is.na(raw_test$avg_precision) && !is.na(raw_test$auc_roc)) {
+if (!is.na(raw_test$avg_precision) && !is.na(raw_test$auc_roc))
   if (abs(raw_test$avg_precision - raw_test$auc_roc) < 0.001)
-    warning("[09_Train.R] WARNING: avg_precision == auc_roc — ",
-            "check PRROC installation and fn_avg_precision.")
-}
+    warning("[09_Train.R] avg_precision == auc_roc — check PRROC.")
 
 cat("[09_Train.R] All assertions passed.\n")
 

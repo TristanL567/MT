@@ -6,7 +6,7 @@
 # PURPOSE:
 #   Construct the full feature matrix from panel_raw.rds.
 #   Produces features_raw.rds — one row per (permno, year), all engineered
-#   features attached, ready for autoencoder (06C) and feature selection (07).
+#   features attached, ready for autoencoder (08B) and training (09).
 #
 # INPUTS:
 #   - config.R
@@ -14,19 +14,19 @@
 #   - PATH_PRICES_MONTHLY  : monthly prices for rolling price momentum features
 #
 # OUTPUT:
-#   - PATH_FEATURES_RAW    : (permno, year, y, censored, ~350 features)
+#   - PATH_FEATURES_RAW    : (permno, year, y, censored, ~460 features)
 #
 # FEATURE FAMILIES:
 #   1. Point-in-time ratios          (~40)  : Foundation ratios, Altman Z
-#   2. YoY changes                   (~20)  : First derivatives
-#   3. Acceleration                  (~20)  : Second derivatives
-#   4. Expanding mean & volatility   (~20)  : Long-run trend baseline
-#   5. Peak deterioration            (~10)  : Drawdown from all-time high
-#   6. Consecutive decline counters  (~6)   : Zombie dynamics
-#   7. Accounting momentum           (~10)  : 2Y vs expanding mean
-#   8. Rolling statistics 12M        (~90)  : Short-window dynamics (WINDOW_SHORT)
-#   9. Rolling statistics 60M        (~90)  : Long-window dynamics  (WINDOW_LONG)
-#  10. Price momentum & volatility   (~9)   : From prices_monthly
+#   2. YoY changes                   (~41)  : First derivatives
+#   3. Acceleration                  (~41)  : Second derivatives
+#   4. Expanding mean & volatility   (~82)  : Long-run trend baseline (lagged)
+#   5. Peak deterioration            (~18)  : Drawdown from 5yr rolling peak
+#   6. Consecutive decline counters  (~10)  : Zombie dynamics
+#   7. Accounting momentum           (~15)  : 2Y vs expanding mean
+#   8. Rolling statistics 3yr        (~90)  : Short-window dynamics
+#   9. Rolling statistics 5yr        (~90)  : Long-window dynamics
+#  10. Price momentum & volatility   (~8)   : From prices_monthly
 #  11. Macro interaction terms       (~6)   : Firm × macro regime
 #
 # DESIGN DECISIONS:
@@ -38,34 +38,45 @@
 #
 #   [2] RATIO CONSTRUCTION USES SAFE DIVISION:
 #       All denominators guarded against zero and NA via safe_div().
-#       Extreme ratios winsorised at 1st/99th percentile of training set.
-#       Winsorisation parameters fitted on training set only — no leakage.
-#       NOTE: Winsorisation is deferred to 09_Train.R per-split to avoid
-#       leaking test distribution into training. Raw (unwinsorised) ratios
-#       saved here.
+#       Raw (unwinsorised) ratios saved — winsorisation in 09_Train.R.
 #
 #   [3] PROGRAMMATIC FEATURE DETECTION:
 #       meta_cols and id_cols defined explicitly. All other numeric columns
-#       are treated as base variables for ratio construction. No hardcoded
-#       feature lists except for semantically meaningful ratio groups
-#       (PEAK_RATIOS, TROUGH_RATIOS, CONSEC_RATIOS) defined in config.R.
+#       treated as base variables. No hardcoded feature lists except for
+#       semantically meaningful ratio groups.
 #
 #   [4] mkvalt IS ALREADY FILLED:
 #       coalesce(mkvalt, prcc_f * csho) was applied in 06_Merge.R.
-#       No further fallback needed here.
 #
-#   [5] ROLLING STATS COMPUTED ON RATIO PANEL:
-#       Rolling statistics are applied to the engineered ratios, not raw
-#       Compustat levels. This follows the paper's approach and produces
-#       more economically meaningful temporal features.
+#   [5] ROLLING PEAK FOR DRAWDOWN (Family 10):
+#       max_dd_12m / max_dd_60m use a 3-YEAR (36-month) ROLLING PEAK,
+#       not the all-time cumulative peak. This ensures the feature measures
+#       CURRENT deterioration from a recent reference point.
+#       Rationale: a firm stable at a depressed level after a 2002 crash
+#       should show max_dd ≈ 0%, not -80%, in 2007.
+#       Fallback: firms with < 36 months of history use expanding cummax.
 #
-#   [6] PRICE MOMENTUM FROM prices_monthly:
-#       Short-window momentum (1m, 3m, 6m) requires monthly prices — cannot
-#       be computed from the annual panel. Loaded separately and joined.
+#   [6] ROLLING PEAK FOR FUNDAMENTALS (Family 5):
+#       peak_drop_* uses a 5-YEAR ROLLING PEAK of the ratio, not cummax
+#       over the firm's full history. Same rationale as [5] — measures
+#       recent deterioration, not cumulative loss from a decade-old peak.
+#       Implemented via slider::slide_dbl() per firm per column.
+#       Fallback: expanding cummax for firms with < 5 years of history.
+#
+#   [7] TROUGH RISE (Family 5):
+#       trough_rise_* retains cummin (all-time trough) — rising leverage
+#       from an all-time low is meaningful regardless of age.
 #
 #==============================================================================#
 
 source("config.R")
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(dplyr)
+  library(slider)
+  library(lubridate)
+})
 
 cat("\n[06B_Feature_Eng.R] START:", format(Sys.time()), "\n")
 
@@ -102,10 +113,6 @@ safe_log <- function(x) {
 
 #==============================================================================#
 # 1. FEATURE FAMILY 1 — Point-in-Time Ratios
-#
-#   Constructed from single-year fundamentals in panel_raw.
-#   All denominators guarded via safe_div().
-#   Raw unwinsorised values saved — winsorisation in 09_Train.R.
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Family 1: Point-in-time ratios...\n")
@@ -113,95 +120,76 @@ cat("[06B_Feature_Eng.R] Family 1: Point-in-time ratios...\n")
 panel[, `:=`(
   
   ##── Profitability ──────────────────────────────────────────────────────────
-  earn_yld         = safe_div(epspx,   prcc_f),          # ff_earn_yld *
-  ocf_per_share    = safe_div(oancf,   csho),            # ff_oper_ps_net_cf *
-  roa              = safe_div(ni,      at),               # Return on assets
-  roe              = safe_div(ni,      seq),              # Return on equity
-  roic             = safe_div(oiadp,   icapt),            # ff_roic *
-  ebit_roa         = safe_div(ebit,    at),               # ff_ebit_oper_roa *
-  gross_margin     = safe_div(gp,      sale),             # Gross margin
-  ebitda_margin    = safe_div(ebitda,  sale),             # EBITDA margin
-  ocf_margin       = safe_div(oancf,   sale),             # ff_cf_sales *
+  earn_yld         = safe_div(epspx,   prcc_f),
+  ocf_per_share    = safe_div(oancf,   csho),
+  roa              = safe_div(ni,      at),
+  roe              = safe_div(ni,      seq),
+  roic             = safe_div(oiadp,   icapt),
+  ebit_roa         = safe_div(ebit,    at),
+  gross_margin     = safe_div(gp,      sale),
+  ebitda_margin    = safe_div(ebitda,  sale),
+  ocf_margin       = safe_div(oancf,   sale),
   
   ##── Leverage ───────────────────────────────────────────────────────────────
-  leverage         = safe_div(dltt + dlc, at),            # Total leverage
-  net_debt_ebitda  = safe_div(dltt + dlc - che, ebitda),  # Net debt / EBITDA
-  std_debt_pct     = safe_div(dlc,  dltt + dlc),          # ff_std_debt *
-  eff_int_rate     = safe_div(xint, dltt + dlc),          # ff_eff_int_rate *
-  interest_cov     = safe_div(oiadp, xint),               # Interest coverage
-  dd1_ratio        = safe_div(dd1,  at),                  # Refinancing wall
+  leverage         = safe_div(dltt + dlc, at),
+  net_debt_ebitda  = safe_div(dltt + dlc - che, ebitda),
+  std_debt_pct     = safe_div(dlc,  dltt + dlc),
+  eff_int_rate     = safe_div(xint, dltt + dlc),
+  interest_cov     = safe_div(oiadp, xint),
+  dd1_ratio        = safe_div(dd1,  at),
   
   ##── Liquidity ──────────────────────────────────────────────────────────────
-  current_ratio    = safe_div(act,  lct),                 # Current ratio
-  quick_ratio      = safe_div(act - invt, lct),           # Quick ratio
-  cash_pct_act     = safe_div(che,  act),                 # ff_cash_curr_assets *
-  wcap_ratio       = safe_div(wcap, at),                  # Working capital / assets
+  current_ratio    = safe_div(act,  lct),
+  quick_ratio      = safe_div(act - invt, lct),
+  cash_pct_act     = safe_div(che,  act),
+  wcap_ratio       = safe_div(wcap, at),
   
   ##── Valuation & Market ─────────────────────────────────────────────────────
-  bp_ratio         = safe_div(seq,  mkvalt),              # Book-to-price
-  ev_to_sales      = safe_div(mkvalt + dltt + dlc - che, sale), # ff_entrpr_val_sales *
-  div_yield        = safe_div(dvc,  mkvalt),              # ff_div_yld *
-  cash_div_cf      = safe_div(dv,   oancf),               # ff_cash_div_cf *
-  mkt_to_book      = safe_div(mkvalt, seq),               # Market-to-book
+  bp_ratio         = safe_div(seq,  mkvalt),
+  ev_to_sales      = safe_div(mkvalt + dltt + dlc - che, sale),
+  div_yield        = safe_div(dvc,  mkvalt),
+  cash_div_cf      = safe_div(dv,   oancf),
+  mkt_to_book      = safe_div(mkvalt, seq),
   
   ##── Quality & Efficiency ───────────────────────────────────────────────────
-  accruals_ratio   = safe_div(ni - oancf, at),            # Sloan (1996)
-  asset_turnover   = safe_div(sale, at),                  # Asset efficiency
-  capex_intensity  = safe_div(capx, at),                  # Capex / assets
-  rd_intensity     = safe_div(xrd,  at),                  # R&D / assets
-  reinvest_rate    = safe_div(capx, oancf),               # ff_reinvest_rate *
+  accruals_ratio   = safe_div(ni - oancf, at),
+  asset_turnover   = safe_div(sale, at),
+  capex_intensity  = safe_div(capx, at),
+  rd_intensity     = safe_div(xrd,  at),
+  reinvest_rate    = safe_div(capx, oancf),
   
-  ##── Size (log-transformed for skew) ───────────────────────────────────────
-  log_at           = safe_log(at),                        # Log total assets
-  log_mkvalt       = safe_log(mkvalt),                    # Log market cap
-  log_emp          = safe_log(emp * 1000),                # Log employees
+  ##── Size ───────────────────────────────────────────────────────────────────
+  log_at           = safe_log(at),
+  log_mkvalt       = safe_log(mkvalt),
+  log_emp          = safe_log(emp * 1000),
   
-  ##── Zombie Precursors (thesis extension) ───────────────────────────────────
-  rental_ratio     = safe_div(xrent, at),                 # Fixed cost obligation
-  assets_per_emp   = safe_div(at,    emp),                # ff_assets_per_emp *
-  ni_per_emp       = safe_div(ni,    emp),                # ff_net_inc_per_emp *
-  min_int_tcap     = safe_div(mib,   seq + mib + dltt),   # ff_min_int_tcap *
+  ##── Zombie Precursors ──────────────────────────────────────────────────────
+  rental_ratio     = safe_div(xrent, at),
+  assets_per_emp   = safe_div(at,    emp),
+  ni_per_emp       = safe_div(ni,    emp),
+  min_int_tcap     = safe_div(mib,   seq + mib + dltt),
   
   ##── Comprehensive income ───────────────────────────────────────────────────
-  compr_inc_ratio  = safe_div(citotal, at),               # ff_compr_inc *
+  compr_inc_ratio  = safe_div(citotal, at),
   
-  ##── Altman Z-Score components (benchmark) ──────────────────────────────────
-  altman_z1        = safe_div(wcap, at),                  # Working capital / assets
-  altman_z2        = safe_div(re,   at),                  # Retained earnings / assets
-  altman_z3        = safe_div(ebit, at),                  # EBIT / assets (= ebit_roa)
-  altman_z4        = safe_div(mkvalt, lt),                # Mkt cap / total liabilities
-  altman_z5        = safe_div(sale, at)                   # Sales / assets (= asset_turnover)
+  ##── Altman Z-Score components ──────────────────────────────────────────────
+  altman_z1        = safe_div(wcap,   at),
+  altman_z2        = safe_div(re,     at),
+  altman_z3        = safe_div(ebit,   at),
+  altman_z4        = safe_div(mkvalt, lt),
+  altman_z5        = safe_div(sale,   at)
 )]
 
-## Composite Altman Z-score
-panel[, altman_z := 1.2 * altman_z1 + 1.4 * altman_z2 +
-        3.3 * altman_z3 + 0.6 * altman_z4 + 1.0 * altman_z5]
+panel[, altman_z       := 1.2*altman_z1 + 1.4*altman_z2 +
+        3.3*altman_z3 + 0.6*altman_z4 + 1.0*altman_z5]
+panel[, invest_st_ratio := safe_div(ivst, at)]
 
-## Short-term investment ratio
-panel[, invest_st_ratio := safe_div(ivst, at)]            # ff_invest_st_tot *
-
-cat(sprintf("  Ratios constructed: %d columns added\n",
-            length(grep("^(earn_yld|ocf_per_share|roa|roe|roic|ebit_roa|
-                         gross_margin|ebitda_margin|ocf_margin|leverage|
-                         net_debt_ebitda|std_debt_pct|eff_int_rate|
-                         interest_cov|dd1_ratio|current_ratio|quick_ratio|
-                         cash_pct_act|wcap_ratio|bp_ratio|ev_to_sales|
-                         div_yield|cash_div_cf|mkt_to_book|accruals_ratio|
-                         asset_turnover|capex_intensity|rd_intensity|
-                         reinvest_rate|log_at|log_mkvalt|log_emp|
-                         rental_ratio|assets_per_emp|ni_per_emp|
-                         min_int_tcap|compr_inc_ratio|altman_z)",
-                        names(panel), value = TRUE))))
+cat("  Point-in-time ratios complete.\n")
 
 #==============================================================================#
 # 1B. Define ratio groups for dynamic feature construction
-#
-#   Used by: peak deterioration, trough rise, consecutive decline counters.
-#   Defined here rather than config.R — these are feature engineering
-#   decisions, not pipeline parameters.
 #==============================================================================#
 
-## "Higher is better" ratios — peak deterioration is meaningful
 PEAK_RATIOS <- c(
   "earn_yld", "ocf_per_share", "roa", "roe", "roic", "ebit_roa",
   "gross_margin", "ebitda_margin", "ocf_margin",
@@ -210,21 +198,18 @@ PEAK_RATIOS <- c(
   "log_mkvalt", "log_emp"
 )
 
-## "Lower is better" ratios — trough rise is meaningful
 TROUGH_RATIOS <- c(
   "leverage", "net_debt_ebitda", "std_debt_pct",
   "eff_int_rate", "dd1_ratio", "rental_ratio",
   "accruals_ratio"
 )
 
-## Ratios for consecutive decline counters — deterioration in these is CSI signal
 CONSEC_RATIOS <- c(
   "earn_yld", "ocf_per_share", "roa", "roic",
   "gross_margin", "interest_cov", "log_mkvalt", "log_emp",
   "current_ratio", "wcap_ratio"
 )
 
-## Core ratios for rolling window statistics (subset — rolling all would be ~350 cols)
 ROLLING_CORE <- c(
   "earn_yld", "ocf_per_share", "roa", "roic",
   "leverage", "net_debt_ebitda", "interest_cov",
@@ -234,7 +219,6 @@ ROLLING_CORE <- c(
   "log_mkvalt", "log_at"
 )
 
-## All engineered ratio columns (for dynamics)
 ratio_cols <- c(
   "earn_yld", "ocf_per_share", "roa", "roe", "roic", "ebit_roa",
   "gross_margin", "ebitda_margin", "ocf_margin",
@@ -250,17 +234,11 @@ ratio_cols <- c(
   "altman_z", "invest_st_ratio"
 )
 
-## Keep only ratio cols that exist in panel
 ratio_cols <- intersect(ratio_cols, names(panel))
-
 cat(sprintf("  ratio_cols for dynamics: %d\n", length(ratio_cols)))
 
 #==============================================================================#
 # 2. FEATURE FAMILY 2 — Year-over-Year Changes (First Derivatives)
-#
-#   Captures deterioration rate. shift() by id ensures no cross-firm bleed.
-#   IMPORTANT: shift() within by=permno gives lag of previous YEAR for this
-#   firm — correct because panel is sorted by (permno, year).
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Family 2: YoY changes...\n")
@@ -271,9 +249,6 @@ panel[, paste0("yoy_", ratio_cols) :=
 
 #==============================================================================#
 # 3. FEATURE FAMILY 3 — Acceleration (Second Derivatives)
-#
-#   Change in the rate of change. Captures whether deterioration is
-#   speeding up (negative acceleration in profitability = worsening).
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Family 3: Acceleration (2nd differences)...\n")
@@ -287,17 +262,15 @@ panel[, paste0("accel_", ratio_cols) :=
 #==============================================================================#
 # 4. FEATURE FAMILY 4 — Expanding Mean & Volatility
 #
-#   Long-run baseline for each firm. STRICTLY LAGGED: cummean shifted by 1
-#   so year t feature uses only years 1..t-1 — no current-year look-ahead.
-#
-#   Expanding volatility: standard deviation of all observations up to t-1.
+#   Strictly lagged: year t feature uses only years 1..t-1.
+#   cummean shifted by 1 excludes current year.
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Family 4: Expanding mean & volatility...\n")
 
 panel[, paste0("expmean_", ratio_cols) :=
         lapply(.SD, function(x) {
-          shift(cummean(x), n = 1L, type = "lag")  # Lag 1 — exclude current year
+          shift(cummean(x), n = 1L, type = "lag")
         }),
       by = permno, .SDcols = ratio_cols]
 
@@ -307,17 +280,24 @@ panel[, paste0("expvol_", ratio_cols) :=
           mu     <- cummean(x)
           expvar <- (cumsum(x^2) - n * mu^2) / pmax(n - 1L, 1L)
           lagged <- shift(sqrt(pmax(0, expvar)), n = 1L, type = "lag")
-          fifelse(n < 3L, NA_real_, lagged)  # Need >=3 obs for meaningful vol
+          fifelse(n < 3L, NA_real_, lagged)
         }),
       by = permno, .SDcols = ratio_cols]
 
 #==============================================================================#
 # 5. FEATURE FAMILY 5 — Peak Deterioration & Trough Rise
 #
-#   peak_drop:   how far "higher is better" ratios have fallen from best-ever
-#   trough_rise: how far "lower is better" ratios have risen from worst-ever
+#   PEAK DETERIORATION — CORRECTED:
+#     Uses 5-year rolling peak (not cummax all-time peak).
+#     Measures how far a ratio has fallen from its RECENT best.
+#     A firm whose earnings yield peaked in 1995 and has been stable at
+#     a lower level for a decade should show peak_drop ≈ 0, not -10pp.
+#     Implemented per-column via explicit loop to avoid data.table
+#     group-context length mismatches with frollapply.
 #
-#   Both use cummax/cummin of LAGGED values — current year excluded.
+#   TROUGH RISE — UNCHANGED:
+#     Retains cummin (all-time trough). Rising leverage from an all-time
+#     low is meaningful regardless of when the trough occurred.
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Family 5: Peak deterioration & trough rise...\n")
@@ -325,30 +305,70 @@ cat("[06B_Feature_Eng.R] Family 5: Peak deterioration & trough rise...\n")
 valid_peak   <- intersect(PEAK_RATIOS,   ratio_cols)
 valid_trough <- intersect(TROUGH_RATIOS, ratio_cols)
 
+## Peak deterioration — 5-year rolling peak per firm per column
 if (length(valid_peak) > 0) {
-  panel[, paste0("peak_drop_", valid_peak) :=
-          lapply(.SD, function(x) {
-            lagged_peak <- shift(cummax(x), n = 1L, type = "lag")
-            x - lagged_peak   # How far below lagged all-time high
-          }),
-        by = permno, .SDcols = valid_peak]
+  for (col in valid_peak) {
+    out_col <- paste0("peak_drop_", col)
+    
+    panel[, (out_col) := {
+      x <- get(col)
+      n <- length(x)
+      
+      ## 5-year rolling peak via slider (handles group context correctly)
+      ## .before = 4L means window covers current + 4 prior = 5 years
+      ## .complete = FALSE returns partial window for early rows
+      rolling_peak_5y <- slider::slide_dbl(
+        x,
+        .f        = function(v) max(v, na.rm = TRUE),
+        .before   = 4L,
+        .complete = FALSE,
+        .after    = 0L
+      )
+      
+      ## Expanding cummax fallback — for firms with < 5 years of history
+      ## Replace NA with -Inf before cummax so NAs do not propagate
+      x_safe       <- replace(x, is.na(x), -Inf)
+      expanding_pk <- cummax(x_safe)
+      expanding_pk[is.infinite(expanding_pk)] <- NA_real_
+      
+      ## Use rolling peak once 5 years of data are available
+      ref_peak_raw <- ifelse(
+        seq_len(n) >= 5L,
+        rolling_peak_5y,
+        expanding_pk
+      )
+      
+      ## Lag by 1 — year t uses peak known through year t-1 only
+      ref_peak <- shift(ref_peak_raw, n = 1L, type = "lag")
+      
+      x - ref_peak
+    }, by = permno]
+  }
+  cat(sprintf("  peak_drop_* : %d columns\n", length(valid_peak)))
 }
 
+## Trough rise — all-time cummin (unchanged, see design note [7])
 if (length(valid_trough) > 0) {
-  panel[, paste0("trough_rise_", valid_trough) :=
-          lapply(.SD, function(x) {
-            lagged_trough <- shift(cummin(x), n = 1L, type = "lag")
-            x - lagged_trough  # How far above lagged all-time low
-          }),
-        by = permno, .SDcols = valid_trough]
+  for (col in valid_trough) {
+    out_col <- paste0("trough_rise_", col)
+    
+    panel[, (out_col) := {
+      x <- get(col)
+      
+      ## Replace NA with +Inf before cummin so NAs do not propagate
+      x_safe        <- replace(x, is.na(x), Inf)
+      expanding_tr  <- cummin(x_safe)
+      expanding_tr[is.infinite(expanding_tr)] <- NA_real_
+      
+      lagged_trough <- shift(expanding_tr, n = 1L, type = "lag")
+      x - lagged_trough
+    }, by = permno]
+  }
+  cat(sprintf("  trough_rise_* : %d columns\n", length(valid_trough)))
 }
 
 #==============================================================================#
 # 6. FEATURE FAMILY 6 — Consecutive Decline Counters
-#
-#   How many consecutive years has a ratio been declining?
-#   Uses YoY change already computed in Family 2.
-#   Sequential loop required — each count depends on previous.
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Family 6: Consecutive decline counters...\n")
@@ -375,13 +395,14 @@ for (col in valid_consec) {
   }, by = permno]
 }
 
+cat(sprintf("  consec_decline_* : %d columns\n", length(valid_consec)))
+
 #==============================================================================#
 # 7. FEATURE FAMILY 7 — Accounting Momentum
 #
 #   Short-run vs long-run baseline: 2Y rolling mean minus expanding mean.
-#   Positive = ratio recently improved above historical average.
-#   Negative = ratio recently deteriorated below historical average.
-#   Applied to ROLLING_CORE ratios only.
+#   Positive = recently improved above historical average.
+#   Negative = recently deteriorated below historical average.
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Family 7: Accounting momentum...\n")
@@ -390,89 +411,77 @@ valid_rolling_core <- intersect(ROLLING_CORE, ratio_cols)
 
 panel[, paste0("acct_mom_", valid_rolling_core) :=
         lapply(.SD, function(x) {
-          roll2  <- frollmean(x, n = 2L, align = "right", fill = NA)
-          expmn  <- shift(cummean(x), n = 1L, type = "lag")
+          roll2 <- frollmean(x, n = 2L, align = "right", fill = NA)
+          expmn <- shift(cummean(x), n = 1L, type = "lag")
           roll2 - expmn
         }),
       by = permno, .SDcols = valid_rolling_core]
 
 #==============================================================================#
-# 8 & 9. FEATURE FAMILIES 8 & 9 — Rolling Statistics
+# 8 & 9. FEATURE FAMILIES 8 & 9 — Rolling Statistics (3yr and 5yr)
 #
-#   Applied over WINDOW_SHORT (12 months ≈ 1 year) and WINDOW_LONG (60 months
-#   ≈ 5 years) as defined in config.R.
+#   Since panel is annual:
+#     WINDOW_SHORT = 12 months → 1 year → 3-year window
+#     WINDOW_LONG  = 60 months → 5 years
+#   (WINDOW_SHORT_YRS corrected to 3 to match thesis configuration)
 #
-#   Since panel is annual, WINDOW_SHORT = 12 months → 1 year window,
-#   WINDOW_LONG = 60 months → 5 year window.
-#   Convert to years for annual panel:
-#     window_short_yrs = WINDOW_SHORT / 12 = 1
-#     window_long_yrs  = WINDOW_LONG  / 12 = 5
-#
-#   Statistics: mean, min, max, sd, OLS trend (slope), autocorr lag-1.
-#   Applied to ROLLING_CORE ratios only (~15 × 6 stats × 2 windows = 180 cols).
-#
-#   slider::slide_dbl() used for robust handling of ragged windows
-#   (firms with fewer years than the window size return NA — correct).
+#   Statistics: mean, min, max, sd, OLS trend, autocorrelation lag-1.
+#   Applied to ROLLING_CORE ratios only.
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Families 8 & 9: Rolling statistics...\n")
 
-## Convert month-based config windows to years for annual panel
-WINDOW_SHORT_YRS <- as.integer(WINDOW_SHORT / 12L)   # 1 year
-WINDOW_LONG_YRS  <- as.integer(WINDOW_LONG  / 12L)   # 5 years
+WINDOW_SHORT_YRS <- 3L   # 3-year rolling window
+WINDOW_LONG_YRS  <- 5L   # 5-year rolling window
 
-## OLS trend (slope) function — returns NA for windows with all-NA or < 3 obs
 fn_trend <- function(x) {
   valid <- !is.na(x)
   n     <- sum(valid)
   if (n < 3L) return(NA_real_)
   t  <- seq_along(x)[valid]
   xv <- x[valid]
-  ## Deming-style OLS slope: cov(t, x) / var(t)
   cov(t, xv) / var(t)
 }
 
-## Autocorrelation lag-1
 fn_autocorr <- function(x) {
   valid <- x[!is.na(x)]
   if (length(valid) < 3L) return(NA_real_)
   cor(valid[-length(valid)], valid[-1], use = "complete.obs")
 }
 
-## Rolling stats helper — applies one stat function over a window
 fn_roll <- function(x, window, fn) {
   slider::slide_dbl(
     x,
     .f        = fn,
     .before   = window - 1L,
-    .complete = FALSE    # Return NA for incomplete windows rather than erroring
+    .complete = FALSE
   )
 }
 
-## Apply all rolling statistics for each window
 for (w in c(WINDOW_SHORT_YRS, WINDOW_LONG_YRS)) {
   
   w_suffix <- sprintf("_%dy", w)
   cat(sprintf("  Rolling window: %d year(s)...\n", w))
   
-  panel[, paste0("roll_mean", w_suffix, "_", valid_rolling_core) :=
+  panel[, paste0("roll_mean",     w_suffix, "_", valid_rolling_core) :=
           lapply(.SD, fn_roll, window = w, fn = mean),
         by = permno, .SDcols = valid_rolling_core]
   
-  panel[, paste0("roll_min",  w_suffix, "_", valid_rolling_core) :=
+  panel[, paste0("roll_min",      w_suffix, "_", valid_rolling_core) :=
           lapply(.SD, fn_roll, window = w, fn = min),
         by = permno, .SDcols = valid_rolling_core]
   
-  panel[, paste0("roll_max",  w_suffix, "_", valid_rolling_core) :=
+  panel[, paste0("roll_max",      w_suffix, "_", valid_rolling_core) :=
           lapply(.SD, fn_roll, window = w, fn = max),
         by = permno, .SDcols = valid_rolling_core]
   
-  panel[, paste0("roll_sd",   w_suffix, "_", valid_rolling_core) :=
+  panel[, paste0("roll_sd",       w_suffix, "_", valid_rolling_core) :=
           lapply(.SD, fn_roll, window = w,
-                 fn = function(x) if (sum(!is.na(x)) < 2L) NA_real_ else sd(x, na.rm = TRUE)),
+                 fn = function(x) if (sum(!is.na(x)) < 2L) NA_real_
+                 else sd(x, na.rm = TRUE)),
         by = permno, .SDcols = valid_rolling_core]
   
-  panel[, paste0("roll_trend", w_suffix, "_", valid_rolling_core) :=
+  panel[, paste0("roll_trend",    w_suffix, "_", valid_rolling_core) :=
           lapply(.SD, fn_roll, window = w, fn = fn_trend),
         by = permno, .SDcols = valid_rolling_core]
   
@@ -484,30 +493,53 @@ for (w in c(WINDOW_SHORT_YRS, WINDOW_LONG_YRS)) {
 #==============================================================================#
 # 10. FEATURE FAMILY 10 — Price Momentum & Volatility
 #
-#   Computed from prices_monthly — requires monthly data, cannot be derived
-#   from the annual panel alone.
+#   CORRECTED: max_dd_12m / max_dd_60m now use a 3-YEAR (36-month)
+#   rolling peak instead of the all-time cumulative peak (cummax).
 #
-#   Features computed at end of each calendar year t:
-#     mom_1m   : 1-month return (December return)
-#     mom_3m   : compounded return Oct–Dec
-#     mom_6m   : compounded return Jul–Dec
-#     mom_12m  : compounded return Jan–Dec (= log_return already in panel)
-#     mom_24m  : compounded return 2 calendar years
-#     vol_12m  : sd of monthly returns over 12 months
-#     vol_60m  : sd of monthly returns over 60 months
-#     max_dd_12m: maximum drawdown from wealth index over 12 months
-#     max_dd_60m: maximum drawdown from wealth index over 60 months
+#   Rationale (design note [5]):
+#     The model answers "will this ongoing drawdown become a permanent CSI
+#     event?" A firm stable at a depressed level after a 2002 crash should
+#     show max_dd ≈ 0% in 2007 — not -80% from the 1999 all-time high.
+#     Using a 3-year rolling peak ensures the feature measures current
+#     price trajectory, not cumulative historical loss.
+#
+#   Fallback: firms with < 36 months of history use expanding cummax.
+#   This is handled via ifelse(is.na(rolling_peak_3y), cummax, rolling).
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Family 10: Price momentum & volatility...\n")
 
-## Compute wealth index and max drawdown per permno
+## Step 1: Wealth index from inception
 prices_m[, wealth_index := cumprod(1 + fifelse(is.na(ret_adj), 0, ret_adj)),
          by = permno]
-prices_m[, rolling_peak := cummax(wealth_index), by = permno]
-prices_m[, drawdown      := wealth_index / rolling_peak - 1]
-prices_m[, cal_year      := year(date)]
-prices_m[, cal_month     := month(date)]
+
+## Step 2: 3-year (36-month) rolling peak via slider — handles group context
+## Step 3: Reference peak = rolling where available, expanding otherwise
+prices_m[, drawdown := {
+  ## Rolling 36-month peak — resets after recovery
+  rolling_peak_3y <- slider::slide_dbl(
+    wealth_index,
+    .f        = max,
+    .before   = 35L,   ## 35 prior + current month = 36 months
+    .complete = FALSE,
+    .after    = 0L
+  )
+  
+  ## Expanding cummax fallback for first < 36 months of history
+  expanding_peak <- cummax(wealth_index)
+  
+  ## Use rolling once >= 36 months of data available, expanding before that
+  ref_peak <- ifelse(
+    seq_along(wealth_index) >= 36L,
+    rolling_peak_3y,
+    expanding_peak
+  )
+  
+  wealth_index / ref_peak - 1
+}, by = permno]
+
+prices_m[, cal_year  := year(date)]
+prices_m[, cal_month := month(date)]
 
 ## Compound returns helper
 fn_compound_ret <- function(ret_vec) {
@@ -516,31 +548,28 @@ fn_compound_ret <- function(ret_vec) {
   prod(1 + clean) - 1
 }
 
-## For each (permno, year), compute momentum features using data up to Dec of year t
+## Compute annual price features per (permno, year)
+## Inside the by group, all columns refer only to rows for that (permno, year)
 price_feats <- prices_m[, {
   
-  ## All monthly returns in this year
-  yr_rets <- ret_adj[cal_year == .BY$year]
-  
-  ## Returns in recent windows (only use data from <= current year)
-  all_hist <- ret_adj  # Full history for this permno up to end of year
+  all_hist <- ret_adj    ## Monthly returns for this permno × year group
+  n_hist   <- length(all_hist)
   
   ## Momentum: compound returns over trailing windows ending Dec of year t
-  n_hist <- length(all_hist)
-  
-  mom_1m    <- if (n_hist >= 1L)  all_hist[n_hist] else NA_real_
-  mom_3m    <- if (n_hist >= 3L)  fn_compound_ret(tail(all_hist, 3L))  else NA_real_
-  mom_6m    <- if (n_hist >= 6L)  fn_compound_ret(tail(all_hist, 6L))  else NA_real_
-  mom_24m   <- if (n_hist >= 24L) fn_compound_ret(tail(all_hist, 24L)) else NA_real_
+  mom_1m  <- if (n_hist >= 1L)  all_hist[n_hist]                    else NA_real_
+  mom_3m  <- if (n_hist >= 3L)  fn_compound_ret(tail(all_hist,  3L)) else NA_real_
+  mom_6m  <- if (n_hist >= 6L)  fn_compound_ret(tail(all_hist,  6L)) else NA_real_
+  mom_24m <- if (n_hist >= 24L) fn_compound_ret(tail(all_hist, 24L)) else NA_real_
   
   ## Volatility: sd of monthly returns
-  vol_12m   <- if (sum(!is.na(tail(all_hist, 12L))) >= 3L)
+  vol_12m <- if (sum(!is.na(tail(all_hist, 12L))) >= 3L)
     sd(tail(all_hist, 12L), na.rm = TRUE) else NA_real_
-  vol_60m   <- if (sum(!is.na(tail(all_hist, 60L))) >= 12L)
+  vol_60m <- if (sum(!is.na(tail(all_hist, 60L))) >= 12L)
     sd(tail(all_hist, 60L), na.rm = TRUE) else NA_real_
   
-  ## Max drawdown: worst drawdown over trailing windows
-  dd_hist <- drawdown
+  ## Max drawdown: worst value in trailing window of the CORRECTED drawdown
+  ## drawdown is already computed from the 3yr rolling peak above
+  dd_hist    <- drawdown
   max_dd_12m <- if (n_hist >= 12L) min(tail(dd_hist, 12L), na.rm = TRUE) else NA_real_
   max_dd_60m <- if (n_hist >= 60L) min(tail(dd_hist, 60L), na.rm = TRUE) else NA_real_
   
@@ -557,61 +586,42 @@ price_feats <- prices_m[, {
   
 }, by = .(permno, year = cal_year)]
 
-## Join price momentum features to panel
+## Join price momentum features onto annual panel
 panel <- merge(
   panel,
   price_feats,
-  by  = c("permno", "year"),
+  by    = c("permno", "year"),
   all.x = TRUE
 )
 
 setorder(panel, permno, year)
 
 cat(sprintf("  Price momentum features added: %d columns\n",
-            ncol(price_feats) - 2L))  # -2 for permno, year
+            ncol(price_feats) - 2L))
 
 #==============================================================================#
 # 11. FEATURE FAMILY 11 — Macro Interaction Terms
-#
-#   Multiplicative interactions between firm-level distress signals and
-#   macro regime variables. Captures rate sensitivity, credit market stress,
-#   and cyclicality of profitability.
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Family 11: Macro interactions...\n")
 
 panel[, `:=`(
-  ## Leverage × interest rate: debt service stress when rates rise
-  interact_lev_rate     = leverage * fedfunds,
-  
-  ## Interest coverage × rate: firms with thin coverage under rate pressure
-  interact_cov_rate     = interest_cov * fedfunds,
-  
-  ## Net debt / EBITDA × HY spread: credit market stress for leveraged firms
-  interact_nde_hyspr    = net_debt_ebitda * hy_spread,
-  
-  ## ROA × GDP growth: cyclicality of profitability
-  interact_roa_gdp      = roa * gdp_growth,
-  
-  ## Log return × VIX: idiosyncratic vs systematic volatility
-  interact_ret_vix      = log_return * vix,
-  
-  ## Accruals × HY spread: earnings quality in stressed credit environment
-  interact_acc_hyspr    = accruals_ratio * hy_spread
+  interact_lev_rate  = leverage       * fedfunds,
+  interact_cov_rate  = interest_cov   * fedfunds,
+  interact_nde_hyspr = net_debt_ebitda * hy_spread,
+  interact_roa_gdp   = roa            * gdp_growth,
+  interact_ret_vix   = log_return     * vix,
+  interact_acc_hyspr = accruals_ratio * hy_spread
 )]
 
 #==============================================================================#
 # 12. Identify all feature columns
-#
-#   Programmatically detect all engineered features — no hardcoded list.
-#   meta_cols and raw Compustat variables excluded from feature set.
 #==============================================================================#
 
 cat("[06B_Feature_Eng.R] Identifying feature columns...\n")
 
-## Columns that are metadata or raw Compustat inputs — NOT features
 meta_cols <- c(
-  ## Label and identifier
+  ## Identifiers
   "permno", "year", "y", "censored", "param_id", "gvkey",
   "datadate", "fyr", "sich", "fiscal_year_end_month",
   ## Raw Compustat balance sheet
@@ -631,43 +641,46 @@ meta_cols <- c(
   "csho", "prcc_f", "mkvalt",
   ## Raw Compustat other
   "emp", "xrent",
-  ## Panel-level price features (already in panel from 06_Merge.R)
-  "ann_return", "log_return", "n_months_ret", "avg_mktcap",
-  ## Raw macro levels
+  ## Panel price features (from 06_Merge.R — kept as explicit features below)
+  "n_months_ret", "avg_mktcap",
+  ## Raw macro levels (some kept as explicit features below)
   "gdp", "gdp_growth", "unrate", "fedfunds", "gs10",
   "term_spread", "hy_spread", "vix", "cpi", "cpi_inflation",
   "indpro", "indpro_growth", "recession",
+  ## Rolling peak intermediate — not a feature
+  "rolling_peak_3y",
   ## Lifetime
   "lifetime_years"
 )
 
-## All numeric columns not in meta_cols are features
-all_cols     <- names(panel)
+## All numeric columns not in meta_cols
 feature_cols <- setdiff(
-  all_cols[sapply(panel, is.numeric)],
+  names(panel)[sapply(panel, is.numeric)],
   meta_cols
 )
 
-## Also include log_return and ann_return as features (price signals)
-feature_cols <- unique(c(feature_cols, "log_return", "ann_return",
-                         "term_spread", "hy_spread", "unrate",
-                         "fedfunds", "vix", "cpi_inflation",
-                         "gdp_growth", "indpro_growth", "recession"))
+## Explicitly include macro and price signals as features
+feature_cols <- unique(c(
+  feature_cols,
+  "log_return", "ann_return",
+  "term_spread", "hy_spread", "unrate",
+  "fedfunds", "vix", "cpi_inflation",
+  "gdp_growth", "indpro_growth", "recession"
+))
 
-## Keep only cols that exist
 feature_cols <- intersect(feature_cols, names(panel))
 
 cat(sprintf("  Total feature columns: %d\n", length(feature_cols)))
 
 #==============================================================================#
-# 13. Construct features_raw — retain only identifiers + features
+# 13. Construct features_raw
 #==============================================================================#
 
-id_cols      <- c("permno", "year", "y", "censored", "param_id",
-                  "gvkey", "datadate", "lifetime_years",
-                  "fiscal_year_end_month")
-keep_cols    <- unique(c(id_cols, feature_cols))
-keep_cols    <- intersect(keep_cols, names(panel))
+id_cols   <- c("permno", "year", "y", "censored", "param_id",
+               "gvkey", "datadate", "lifetime_years",
+               "fiscal_year_end_month")
+keep_cols <- unique(c(id_cols, feature_cols))
+keep_cols <- intersect(keep_cols, names(panel))
 
 features_raw <- panel[, ..keep_cols]
 
@@ -684,31 +697,45 @@ cat("[06B_Feature_Eng.R] Running assertions...\n")
 ## A) No duplicate (permno, year)
 n_dup <- sum(duplicated(features_raw[, .(permno, year)]))
 if (n_dup > 0)
-  stop(sprintf("[06B_Feature_Eng.R] ASSERTION FAILED: %d duplicate (permno, year).",
-               n_dup))
+  stop(sprintf("ASSERTION FAILED: %d duplicate (permno, year).", n_dup))
 
 ## B) y values valid
 invalid_y <- features_raw[!is.na(y) & !y %in% c(0L, 1L)]
 if (nrow(invalid_y) > 0)
-  stop("[06B_Feature_Eng.R] ASSERTION FAILED: Invalid y values.")
+  stop("ASSERTION FAILED: Invalid y values.")
 
 ## C) Core features exist
 core_required <- c("earn_yld", "ocf_per_share", "roa", "leverage",
-                   "altman_z", "log_return", "vol_12m")
-missing_core  <- setdiff(core_required, names(features_raw))
+                   "altman_z", "log_return", "vol_12m", "max_dd_12m")
+missing_core <- setdiff(core_required, names(features_raw))
 if (length(missing_core) > 0)
-  stop(sprintf("[06B_Feature_Eng.R] ASSERTION FAILED: Missing core features: %s",
+  stop(sprintf("ASSERTION FAILED: Missing core features: %s",
                paste(missing_core, collapse = ", ")))
 
 ## D) Feature count plausible
 if (length(feature_cols) < 100L)
-  warning(sprintf("[06B_Feature_Eng.R] WARNING: Only %d features — expected >= 100.",
+  warning(sprintf("WARNING: Only %d features — expected >= 100.",
                   length(feature_cols)))
+
+## E) max_dd_12m distribution check — verify rolling peak fix worked
+## CSI firms (y=1) should no longer have median near -90%
+dd_by_label <- features_raw[!is.na(y), .(
+  median_dd = median(max_dd_12m, na.rm = TRUE),
+  mean_dd   = mean(max_dd_12m,   na.rm = TRUE)
+), by = y]
+cat("\n  max_dd_12m sanity check (rolling peak fix):\n")
+print(dd_by_label)
+if (dd_by_label[y == 1L, median_dd] < -0.85)
+  warning(paste(
+    "max_dd_12m median for CSI firms is still < -85%.",
+    "Rolling peak fix may not have taken effect.",
+    "Check Family 10 drawdown computation."
+  ))
 
 cat("[06B_Feature_Eng.R] All assertions passed.\n")
 
 #==============================================================================#
-# 15. Validation diagnostics — NA audit by feature family
+# 15. Validation diagnostics
 #==============================================================================#
 
 cat("\n[06B_Feature_Eng.R] ══════════════════════════════════════\n")
@@ -716,7 +743,6 @@ cat(sprintf("  Rows           : %d\n", nrow(features_raw)))
 cat(sprintf("  Feature columns: %d\n", length(feature_cols)))
 cat(sprintf("  Permno         : %d\n", n_distinct(features_raw$permno)))
 
-## NA audit by feature family
 cat("\n  NA audit by feature family:\n")
 
 family_prefixes <- c(
@@ -730,15 +756,15 @@ family_prefixes <- c(
   "Trough rise"          = "^trough_rise_",
   "Consec. declines"     = "^consec_decline_",
   "Acct. momentum"       = "^acct_mom_",
-  "Rolling 1yr"          = "^roll_.*_1y_",
+  "Rolling 3yr"          = "^roll_.*_3y_",
   "Rolling 5yr"          = "^roll_.*_5y_",
   "Price momentum"       = "^(mom_|vol_|max_dd_)",
   "Macro interactions"   = "^interact_"
 )
 
 for (fname in names(family_prefixes)) {
-  pat   <- family_prefixes[[fname]]
-  cols  <- grep(pat, names(features_raw), value = TRUE, perl = TRUE)
+  pat  <- family_prefixes[[fname]]
+  cols <- grep(pat, names(features_raw), value = TRUE, perl = TRUE)
   if (length(cols) == 0L) next
   n_na  <- sum(is.na(features_raw[, .SD, .SDcols = cols]))
   n_tot <- length(cols) * nrow(features_raw)
@@ -746,15 +772,13 @@ for (fname in names(family_prefixes)) {
               fname, length(cols), 100 * n_na / n_tot))
 }
 
-## Coverage for key paper features
 cat("\n  Key paper feature coverage (% non-missing):\n")
 paper_features <- c("earn_yld", "ocf_per_share", "roa", "roic",
                     "leverage", "altman_z", "log_return",
-                    "vol_12m", "fedfunds", "gdp_growth")
+                    "vol_12m", "max_dd_12m", "fedfunds", "gdp_growth")
 for (v in intersect(paper_features, names(features_raw))) {
   pct <- 100 * mean(!is.na(features_raw[[v]]))
   cat(sprintf("    %-20s : %5.1f%%\n", v, pct))
 }
 
 cat("\n[06B_Feature_Eng.R] DONE:", format(Sys.time()), "\n")
-

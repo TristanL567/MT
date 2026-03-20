@@ -63,7 +63,7 @@ cat("\n[09B_Train_Results.R] START:", format(Sys.time()), "\n")
 AG_DIRS <- list(
   M1 = file.path(DIR_TABLES, "ag_fund"),
   M2 = file.path(DIR_TABLES, "ag_latent_fund"),
-  M3 = file.path(DIR_TABLES, "ag_raw"),
+  M3 = file.path(DIR_TABLES),          # ← root, not ag_raw/
   M4 = file.path(DIR_TABLES, "ag_latent_raw")
 )
 
@@ -443,3 +443,4 @@ for (i in seq_len(nrow(cv_table))) {
 }
 
 cat(sprintf("\n[09B_Train_Results.R] DONE: %s\n", format(Sys.time())))
+

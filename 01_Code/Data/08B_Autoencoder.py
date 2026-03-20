@@ -1,7 +1,22 @@
 """
-08B_Autoencoder.py  (v2 — corrected)
-=====================================
+08B_Autoencoder.py  (v3 — dual input mode)
+==========================================
 Beta-VAE with optional supervised classification loss for CSI prediction.
+
+VAE INPUT SELECTION:
+    Set VAE_INPUT at the top of Section 3 (Configuration):
+
+    VAE_INPUT = "fund"  → M2: VAE trained on fundamentals only
+                              Input : features_fund.rds
+                              Output: features_latent_fund.parquet
+                              Purpose: Does VAE add signal over raw fundamentals?
+
+    VAE_INPUT = "raw"   → M4: VAE trained on full feature set
+                              Input : features_raw.rds
+                              Output: features_latent_raw.parquet
+                              Purpose: Does VAE compress full features usefully?
+
+    Run twice — once per VAE_INPUT — to produce both latent files.
 
 Architecture:
     Encoder     : n_features → 256 → 128 → 64 → (z_mean, z_log_var)
@@ -27,28 +42,9 @@ Early stopping:
     Validation split (15% of train)        ← FIX 3: generalisation check
     Early stopping on VALIDATION loss.
 
-Inputs:
-    - features_raw.rds         : feature matrix (pyreadr)
-    - split_labels_oot.parquet : OOT split labels (exported by 08_Split.R)
-
 Outputs:
-    - features_latent.parquet  : (permno, year, y, censored, z1..z24,
-                                   vae_recon_error, split)
-    - Models/VAE/              : weights, config
-    - Figures/                 : training curves, latent space plot
-
-Corrections vs v1:
-    [FIX 1] Loss reduction: reduction="none" + .sum(dim=1).mean()
-            Aligns recon_loss and KL on the same scale. Prevents posterior
-            collapse caused by recon being divided by n_features.
-    [FIX 2] PIT output_distribution changed from "uniform" to "normal".
-            Normal targets match the infinite domain of the linear decoder
-            and align with the VAE's Gaussian generative assumptions.
-    [FIX 3] Validation split (15% of train) for early stopping.
-            Prevents latent space degeneration into a training lookup table.
-    [FIX 4] ClassifierHead returns logits (no sigmoid).
-            compute_loss uses F.binary_cross_entropy_with_logits.
-            Numerically stable via log-sum-exp trick.
+    VAE_INPUT="fund" → features_latent_fund.parquet  [M2]
+    VAE_INPUT="raw"  → features_latent_raw.parquet   [M4]
 """
 
 # ==============================================================================
@@ -77,38 +73,21 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # ==============================================================================
-# 1. Utility functions  (defined first — called at module level in Section 5)
+# 1. Utility functions
 # ==============================================================================
 
 def clip_to_float32_safe(X: np.ndarray,
                          quantile_low:  float = 0.001,
                          quantile_high: float = 0.999) -> np.ndarray:
-    """
-    Remove inf values and winsorise extreme outliers column-wise.
-    Converts to float64 → winsorise → float32.
-    float64 intermediate prevents overflow during nanpercentile computation.
-    Winsorisation is defensive: QuantileTransformer is rank-based and
-    immune to outliers in its output, but inf/NaN in the input matrix
-    would propagate to float32 overflow before the transformer sees them.
-    """
     X = X.astype(np.float64)
-    X = np.where(np.isinf(X), np.nan, X)          # inf → NaN
-
+    X = np.where(np.isinf(X), np.nan, X)
     lo = np.nanpercentile(X, quantile_low  * 100, axis=0)
     hi = np.nanpercentile(X, quantile_high * 100, axis=0)
-
-    # For columns that are entirely NaN, lo/hi are NaN — clip is a no-op
-    X = np.clip(X, lo, hi)
-
+    X  = np.clip(X, lo, hi)
     return X.astype(np.float32)
 
 
 def get_valid_cols(df_tr, df_te, df_oo, cols):
-    """
-    Drop columns that are entirely NaN in any split.
-    These cannot be imputed or normalised and would propagate NaN
-    through the entire pipeline.
-    """
     valid   = []
     dropped = []
     for c in cols:
@@ -126,7 +105,7 @@ def get_valid_cols(df_tr, df_te, df_oo, cols):
 
 
 # ==============================================================================
-# 2. Paths  — update DATA_ROOT if MT/ project moves
+# 2. Paths
 # ==============================================================================
 
 DATA_ROOT    = Path(r"C:\Users\Tristan Leiter\Documents\MT")
@@ -138,22 +117,66 @@ DIR_MODELS   = DATA_ROOT / "03_Output" / "Models" / "VAE"
 DIR_FIGURES.mkdir(parents=True, exist_ok=True)
 DIR_MODELS.mkdir(parents=True,  exist_ok=True)
 
-PATH_FEATURES_RAW    = DIR_FEATURES / "features_raw.rds"
-PATH_SPLIT_LABELS    = DIR_FEATURES / "split_labels_oot.parquet"
-PATH_FEATURES_LATENT = DIR_FEATURES / "features_latent.parquet"
-
-for p in [PATH_FEATURES_RAW, PATH_SPLIT_LABELS]:
-    assert p.exists(), (
-        f"Required input not found: {p}\n"
-        f"Run 08_Split.R first and ensure arrow::write_parquet() was called."
-    )
-
-print(f"[08B] DATA_ROOT    : {DATA_ROOT}")
-print(f"[08B] DIR_FEATURES : {DIR_FEATURES}")
-print(f"[08B] Inputs verified.")
+PATH_SPLIT_LABELS = DIR_FEATURES / "split_labels_oot.parquet"
+assert PATH_SPLIT_LABELS.exists(), (
+    f"Required input not found: {PATH_SPLIT_LABELS}\n"
+    f"Run 08_Split.R first."
+)
 
 # ==============================================================================
-# 3. Hyperparameters
+# 3. ── VAE INPUT SELECTION ────────────────────────────────────────────────────
+#
+#   VAE_INPUT = "fund"  → M2: VAE on fundamentals only (no price features)
+#                             features_fund.rds → features_latent_fund.parquet
+#
+#   VAE_INPUT = "raw"   → M4: VAE on full feature set
+#                             features_raw.rds  → features_latent_raw.parquet
+#
+# ==============================================================================
+
+VAE_INPUT = "raw"    # ← CHANGE THIS: "fund" | "raw"
+
+VAE_INPUT_CONFIG = {
+    "fund": {
+        "path"        : DIR_FEATURES / "features_fund.rds",
+        "out"         : DIR_FEATURES / "features_latent_fund.parquet",
+        "model_dir"   : DIR_MODELS / "fund",
+        "fig_suffix"  : "fund",
+        "description" : "M2 — VAE on fundamentals only (no price features)",
+    },
+    "raw": {
+        "path"        : DIR_FEATURES / "features_raw.rds",
+        "out"         : DIR_FEATURES / "features_latent_raw.parquet",
+        "model_dir"   : DIR_MODELS / "raw",
+        "fig_suffix"  : "raw",
+        "description" : "M4 — VAE on full feature set",
+    },
+}
+
+assert VAE_INPUT in VAE_INPUT_CONFIG, \
+    f"Unknown VAE_INPUT '{VAE_INPUT}'. Choose from: {list(VAE_INPUT_CONFIG.keys())}"
+
+vcfg = VAE_INPUT_CONFIG[VAE_INPUT]
+vcfg["model_dir"].mkdir(parents=True, exist_ok=True)
+
+PATH_FEATURES_INPUT  = vcfg["path"]
+PATH_FEATURES_LATENT = vcfg["out"]
+DIR_MODELS_RUN       = vcfg["model_dir"]
+
+assert PATH_FEATURES_INPUT.exists(), \
+    f"Feature file not found: {PATH_FEATURES_INPUT}\n" \
+    f"Run 06B_Feature_Eng.R first."
+
+print(f"[08B] ══════════════════════════════════════")
+print(f"  VAE_INPUT    : {VAE_INPUT.upper()}")
+print(f"  Description  : {vcfg['description']}")
+print(f"  Input file   : {PATH_FEATURES_INPUT.name}")
+print(f"  Output file  : {PATH_FEATURES_LATENT.name}")
+print(f"  Model dir    : {DIR_MODELS_RUN}")
+print(f"[08B] ══════════════════════════════════════\n")
+
+# ==============================================================================
+# 4. Hyperparameters
 # ==============================================================================
 
 CFG = {
@@ -164,29 +187,24 @@ CFG = {
     "classifier_dims": [16],
 
     # Loss weights
-    # beta=1.0 is the correct starting point after the loss scaling fix.
-    # With sum(dim=1).mean(), recon_loss ≈ n_features × MSE_per_feature,
-    # making it ~461× larger than before. KL stays the same scale.
-    # beta=1.0 gives reconstruction and KL roughly equal weight.
-    # Tune downward (0.1–0.5) if collapsed dims > 5 after training.
     "beta"           : 1.0,
-    "gamma"          : 0.1,           # 0.0 = pure VAE, >0 = supervised
+    "gamma"          : 0.1,
 
     # Training
     "epochs"         : 150,
     "batch_size"     : 512,
     "lr"             : 1e-3,
     "weight_decay"   : 1e-5,
-    "patience"       : 15,            # Epochs without val improvement
-    "kl_warmup"      : 20,            # Epochs to ramp beta from 0 → beta
-    "val_fraction"   : 0.15,          # Fraction of train used for validation
+    "patience"       : 15,
+    "kl_warmup"      : 20,
+    "val_fraction"   : 0.15,
 
     # Reproducibility
     "seed"           : 123,
 }
 
 # ==============================================================================
-# 4. Device & Seeds
+# 5. Device & Seeds
 # ==============================================================================
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -196,37 +214,36 @@ torch.manual_seed(CFG["seed"])
 np.random.seed(CFG["seed"])
 
 # ==============================================================================
-# 5. Load Data
+# 6. Load Data
 # ==============================================================================
 
-print("\n[08B] Loading features_raw.rds...")
-result       = pyreadr.read_r(str(PATH_FEATURES_RAW))
-features_raw = result[None]
-print(f"  Shape: {features_raw.shape[0]:,} rows × {features_raw.shape[1]} cols")
+print(f"\n[08B] Loading {PATH_FEATURES_INPUT.name}...")
+result        = pyreadr.read_r(str(PATH_FEATURES_INPUT))
+features_input = result[None]
+print(f"  Shape: {features_input.shape[0]:,} rows × {features_input.shape[1]} cols")
 
 print("[08B] Loading split labels (OOT)...")
 split_labels = pd.read_parquet(PATH_SPLIT_LABELS)
 print(f"  Split distribution:\n"
       f"{split_labels['split'].value_counts().to_string()}")
 
-df      = features_raw.merge(split_labels, on=["permno", "year"], how="left")
-n_before = len(df)
-df      = df[df["split"].notna()].reset_index(drop=True)
+df        = features_input.merge(split_labels, on=["permno", "year"], how="left")
+n_before  = len(df)
+df        = df[df["split"].notna()].reset_index(drop=True)
 n_dropped = n_before - len(df)
 if n_dropped > 0:
     print(f"  Dropped {n_dropped:,} rows with no split label")
 print(f"  Rows after merge: {len(df):,}")
 
 # ==============================================================================
-# 6. Feature Preparation
+# 7. Feature Preparation
 # ==============================================================================
 
-# ── 6A. Column classification ─────────────────────────────────────────────────
 ID_COLS = [
     "permno", "year", "y", "censored", "param_id",
     "gvkey", "datadate", "lifetime_years", "fiscal_year_end_month", "split"
 ]
-BINARY_COLS = ["recession"]   # BCE reconstruction loss
+BINARY_COLS = ["recession"]
 
 feature_cols = [
     c for c in df.columns
@@ -237,7 +254,6 @@ feature_cols = [
 cont_cols_raw = [c for c in feature_cols if c not in BINARY_COLS]
 bin_cols_raw  = [c for c in feature_cols if c in BINARY_COLS]
 
-# ── 6B. OOT split ─────────────────────────────────────────────────────────────
 train_df = df[df["split"] == "train"].copy().reset_index(drop=True)
 test_df  = df[df["split"] == "test"].copy().reset_index(drop=True)
 oos_df   = df[df["split"] == "oos"].copy().reset_index(drop=True)
@@ -247,7 +263,6 @@ print(f"  Train : {len(train_df):,}")
 print(f"  Test  : {len(test_df):,}")
 print(f"  OOS   : {len(oos_df):,}")
 
-# ── 6C. Drop all-NaN columns ──────────────────────────────────────────────────
 cont_cols  = get_valid_cols(train_df, test_df, oos_df, cont_cols_raw)
 bin_cols   = get_valid_cols(train_df, test_df, oos_df, bin_cols_raw)
 col_order  = cont_cols + bin_cols
@@ -256,11 +271,10 @@ n_binary   = len(bin_cols)
 n_features = len(col_order)
 
 print(f"\n[08B] Feature classification:")
-print(f"  Total    : {n_features}")
+print(f"  Total     : {n_features}")
 print(f"  Continuous: {n_cont}")
 print(f"  Binary    : {n_binary}  {bin_cols}")
 
-# ── 6D. Raw matrices ──────────────────────────────────────────────────────────
 X_train_raw = clip_to_float32_safe(train_df[col_order].values.astype(np.float64))
 X_test_raw  = clip_to_float32_safe(test_df[col_order].values.astype(np.float64))
 X_oos_raw   = clip_to_float32_safe(oos_df[col_order].values.astype(np.float64))
@@ -268,9 +282,7 @@ X_oos_raw   = clip_to_float32_safe(oos_df[col_order].values.astype(np.float64))
 y_train_full = train_df["y"].values.astype(np.float32)
 y_test       = test_df["y"].values.astype(np.float32)
 
-# ── 6E. Imputation — fitted on train only ────────────────────────────────────
-# consec_decline_* → zero imputation (count features, 0 = no decline streak)
-# All other features → median imputation
+# Imputation
 consec_cols  = [c for c in col_order if c.startswith("consec_decline_")]
 consec_mask  = np.array([c in consec_cols for c in col_order])
 other_mask   = ~consec_mask
@@ -301,17 +313,10 @@ assert not np.isnan(X_test_imp).any(),  "NAs remain after imputation — test"
 assert not np.isnan(X_oos_imp).any(),   "NAs remain after imputation — OOS"
 print("  Imputation complete — 0 NAs remaining")
 
-# ── 6F. PIT normalisation — NORMAL distribution, fitted on train only ────────
-# FIX 2: output_distribution="normal"
-# Rationale: the decoder's continuous output head is a bare nn.Linear with
-# output range (-inf, +inf). Normal targets match this domain perfectly and
-# align with the VAE's Gaussian generative assumptions (MSE loss is the
-# log-likelihood of a Gaussian decoder). Uniform [0,1] targets with a linear
-# decoder are theoretically mismatched.
+# PIT normalisation
 print("\n[08B] Applying PIT normalisation (normal distribution, train-fit only)...")
-
 pit = QuantileTransformer(
-    output_distribution="normal",          # FIX 2
+    output_distribution="normal",
     n_quantiles=min(1000, len(X_train_imp)),
     random_state=CFG["seed"]
 )
@@ -327,15 +332,10 @@ if n_cont > 0:
     X_oos_norm[:, :n_cont]   = pit.transform(X_oos_imp[:, :n_cont])
 
 print(f"  PIT applied to {n_cont} continuous features")
-print(f"  Train mean (should be ≈ 0): "
-      f"{X_train_norm[:, :n_cont].mean():.4f}")
-print(f"  Train std  (should be ≈ 1): "
-      f"{X_train_norm[:, :n_cont].std():.4f}")
+print(f"  Train mean (should be ≈ 0): {X_train_norm[:, :n_cont].mean():.4f}")
+print(f"  Train std  (should be ≈ 1): {X_train_norm[:, :n_cont].std():.4f}")
 
-# ── 6G. Validation split from train — FIX 3 ──────────────────────────────────
-# 15% of train held out for early stopping.
-# Stratified on y_firm (ever-CSI) to preserve class balance.
-# y=NA rows get stratum 0 for splitting purposes.
+# Validation split
 y_strat = np.where(np.isnan(y_train_full), 0.0, y_train_full)
 
 train_idx, val_idx = train_test_split(
@@ -354,7 +354,7 @@ print(f"\n[08B] VAE train/val split:")
 print(f"  VAE train : {len(X_vae_train):,} rows")
 print(f"  VAE val   : {len(X_vae_val):,} rows")
 
-# ── 6H. PyTorch tensors and DataLoaders ──────────────────────────────────────
+# PyTorch tensors
 X_vae_train_t = torch.tensor(X_vae_train, dtype=torch.float32)
 X_vae_val_t   = torch.tensor(X_vae_val,   dtype=torch.float32)
 X_train_t     = torch.tensor(X_train_norm, dtype=torch.float32)
@@ -380,19 +380,10 @@ print(f"  Train batches : {len(train_loader)}")
 print(f"  Val batches   : {len(val_loader)}")
 
 # ==============================================================================
-# 7. Model Architecture
+# 8. Model Architecture
 # ==============================================================================
 
 class Encoder(nn.Module):
-    """
-    x → (z_mean, z_log_var)
-    LayerNorm + GELU: better than BatchNorm+ReLU for financial tabular data.
-      - LayerNorm normalises within each observation, not across the batch.
-        Correct for high between-firm variance in financial ratios.
-      - GELU is smoother than ReLU at zero — better for near-zero financial
-        ratios and standard in modern tabular architectures.
-    z_log_var clamped to [-10, 10] for numerical stability.
-    """
     def __init__(self, input_dim: int, hidden_dims: list, z_dim: int):
         super().__init__()
         layers = []
@@ -412,11 +403,6 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    """
-    z → x_reconstructed
-    Continuous head: nn.Linear (unbounded) — matches Normal PIT targets.
-    Binary head: sigmoid — outputs P(recession=1) for BCE loss.
-    """
     def __init__(self, z_dim: int, hidden_dims: list,
                  n_cont: int, n_binary: int):
         super().__init__()
@@ -426,26 +412,20 @@ class Decoder(nn.Module):
             layers += [nn.Linear(in_d, h), nn.LayerNorm(h), nn.GELU()]
             in_d = h
         self.net      = nn.Sequential(*layers)
-        self.out_cont = nn.Linear(in_d, n_cont)    if n_cont   > 0 else None
-        self.out_bin  = nn.Linear(in_d, n_binary)  if n_binary > 0 else None
+        self.out_cont = nn.Linear(in_d, n_cont)   if n_cont   > 0 else None
+        self.out_bin  = nn.Linear(in_d, n_binary) if n_binary > 0 else None
 
     def forward(self, z):
         h     = self.net(z)
         parts = []
         if self.out_cont is not None:
-            parts.append(self.out_cont(h))                  # Linear — Normal
+            parts.append(self.out_cont(h))
         if self.out_bin is not None:
-            parts.append(torch.sigmoid(self.out_bin(h)))    # Sigmoid — BCE
+            parts.append(torch.sigmoid(self.out_bin(h)))
         return torch.cat(parts, dim=1)
 
 
 class ClassifierHead(nn.Module):
-    """
-    z_mean → logits for P(CSI)  [FIX 4: no sigmoid here]
-    Returns raw logits — sigmoid applied inside BCEWithLogitsLoss.
-    BCEWithLogitsLoss uses log-sum-exp trick for numerical stability.
-    Only contributes to loss when gamma > 0.
-    """
     def __init__(self, z_dim: int, hidden_dims: list):
         super().__init__()
         layers = []
@@ -457,22 +437,10 @@ class ClassifierHead(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, z_mean):
-        return self.net(z_mean).squeeze(-1)   # Raw logits
+        return self.net(z_mean).squeeze(-1)
 
 
 class BetaVAE(nn.Module):
-    """
-    Beta-VAE with optional supervised classification head.
-
-    Corrected ELBO:
-      total = recon_loss + beta * KL + gamma * BCE_clf
-
-    recon_loss uses .sum(dim=1).mean() — [FIX 1]
-      This ensures recon_loss and KL are on the same scale:
-      both are averaged over the batch dimension only.
-      Using reduction="mean" would divide recon by n_features,
-      making KL artificially dominant and causing posterior collapse.
-    """
     def __init__(self, input_dim, encoder_dims, decoder_dims,
                  classifier_dims, z_dim, n_cont, n_binary):
         super().__init__()
@@ -497,53 +465,35 @@ class BetaVAE(nn.Module):
 
     def compute_loss(self, x, x_recon, z_mu, z_lv,
                      y_true, beta, gamma, labelled_mask):
-        """
-        Corrected ELBO loss.
-
-        FIX 1: .sum(dim=1).mean() for reconstruction losses.
-          - .sum(dim=1): sum squared errors over the feature dimension
-            for each observation → shape (batch,)
-          - .mean(): average over the batch dimension
-          Result: recon_loss is O(n_features) per observation, same scale
-          as KL which is O(z_dim) per observation. Both then averaged over
-          the batch. This matches the theoretical ELBO formulation.
-        """
-        # ── Continuous reconstruction ─────────────────────────────────────
         if self.n_cont > 0:
             mse = F.mse_loss(
                 x_recon[:, :self.n_cont],
                 x[:, :self.n_cont],
                 reduction="none"
-            ).sum(dim=1).mean()                             # FIX 1
+            ).sum(dim=1).mean()
         else:
             mse = torch.tensor(0.0, device=x.device)
 
-        # ── Binary reconstruction ─────────────────────────────────────────
         if self.n_binary > 0:
             bce_recon = F.binary_cross_entropy(
                 x_recon[:, self.n_cont:],
                 x[:, self.n_cont:],
                 reduction="none"
-            ).sum(dim=1).mean()                             # FIX 1
+            ).sum(dim=1).mean()
         else:
             bce_recon = torch.tensor(0.0, device=x.device)
 
         recon_loss = mse + bce_recon
 
-        # ── KL divergence ─────────────────────────────────────────────────
-        # sum over latent dims, mean over batch → same scale as recon_loss
         kl_loss = -0.5 * torch.mean(
             torch.sum(1 + z_lv - z_mu.pow(2) - z_lv.exp(), dim=1)
         )
 
-        # ── Supervised classification ─────────────────────────────────────
-        # FIX 4: BCEWithLogitsLoss — numerically stable
-        # Only applied to rows where y is not NA
         if gamma > 0 and labelled_mask.sum() > 0:
-            y_logit = self.classifier(z_mu)  # Recompute from z_mu
+            y_logit    = self.classifier(z_mu)
             logits_lab = y_logit[labelled_mask]
             y_true_lab = y_true[labelled_mask]
-            clf_loss   = F.binary_cross_entropy_with_logits(  # FIX 4
+            clf_loss   = F.binary_cross_entropy_with_logits(
                 logits_lab, y_true_lab
             )
         else:
@@ -562,10 +512,6 @@ class BetaVAE(nn.Module):
 
     @torch.no_grad()
     def eval_loss(self, x, y, beta, gamma):
-        """
-        Compute validation loss in eval mode.
-        No gradient computation — for early stopping only.
-        """
         self.eval()
         x_recon, z_mu, z_lv, y_logit = self(x)
         lab_mask = ~torch.isnan(y)
@@ -578,26 +524,16 @@ class BetaVAE(nn.Module):
 
 
 # ==============================================================================
-# 8. Training
+# 9. Training
 # ==============================================================================
 
 def get_beta(epoch: int, max_beta: float, warmup: int) -> float:
-    """Linear KL warmup: 0 → max_beta over warmup epochs."""
     if warmup <= 0:
         return max_beta
     return min(max_beta, max_beta * (epoch + 1) / warmup)
 
 
 def train_vae(model, train_loader, val_loader, cfg, device):
-    """
-    Training loop with:
-      - Adam + weight decay
-      - ReduceLROnPlateau on VALIDATION loss
-      - KL warmup schedule
-      - Gradient clipping (max_norm=1.0)
-      - Early stopping on VALIDATION loss  [FIX 3]
-      - Best-weight checkpointing
-    """
     optimiser = torch.optim.Adam(
         model.parameters(),
         lr=cfg["lr"],
@@ -620,11 +556,9 @@ def train_vae(model, train_loader, val_loader, cfg, device):
     for epoch in range(cfg["epochs"]):
 
         beta_now     = get_beta(epoch, cfg["beta"], cfg["kl_warmup"])
-        epoch_losses = {k: 0.0 for k in
-                        ["total", "recon", "kl", "clf"]}
-        n_batches = 0
+        epoch_losses = {k: 0.0 for k in ["total", "recon", "kl", "clf"]}
+        n_batches    = 0
 
-        # ── Training pass ──────────────────────────────────────────────────
         model.train()
         for x_batch, y_batch in train_loader:
             x_batch  = x_batch.to(device)
@@ -649,8 +583,7 @@ def train_vae(model, train_loader, val_loader, cfg, device):
         for k in epoch_losses:
             history[f"train_{k}"].append(epoch_losses[k] / n_batches)
 
-        # ── Validation pass ────────────────────────────────────────────────
-        val_losses = {k: 0.0 for k in ["total", "recon", "kl", "clf"]}
+        val_losses    = {k: 0.0 for k in ["total", "recon", "kl", "clf"]}
         n_val_batches = 0
 
         with torch.no_grad():
@@ -673,9 +606,8 @@ def train_vae(model, train_loader, val_loader, cfg, device):
         for k in val_losses:
             history[f"val_{k}"].append(val_losses[k] / n_val_batches)
 
-        scheduler.step(history["val_total"][-1])   # FIX 3: val loss
+        scheduler.step(history["val_total"][-1])
 
-        # ── Logging ────────────────────────────────────────────────────────
         if epoch % 10 == 0 or epoch == 0:
             print(
                 f"  Epoch {epoch+1:3d}/{cfg['epochs']} | "
@@ -686,7 +618,6 @@ def train_vae(model, train_loader, val_loader, cfg, device):
                 f"clf={history['train_clf'][-1]:.4f}"
             )
 
-        # ── Early stopping on validation loss ─────────────────────────────
         if history["val_total"][-1] < best_val_loss - 1e-3:
             best_val_loss = history["val_total"][-1]
             best_state    = {k: v.cpu().clone()
@@ -707,17 +638,11 @@ def train_vae(model, train_loader, val_loader, cfg, device):
 
 
 # ==============================================================================
-# 9. Encoding
+# 10. Encoding
 # ==============================================================================
 
 @torch.no_grad()
 def encode(model, X_tensor, device, batch_size=1024):
-    """
-    Encode dataset → (z_mean, per-row reconstruction MSE).
-    z_mean is deterministic and preferred over z_sampled for downstream
-    classification models — no stochastic noise at inference.
-    Reconstruction MSE (mean over features) used as anomaly feature.
-    """
     model.eval()
     z_list   = []
     err_list = []
@@ -728,10 +653,7 @@ def encode(model, X_tensor, device, batch_size=1024):
         z_mu, z_lv = model.encoder(x_batch)
         z_samp     = model.reparameterise(z_mu, z_lv)
         x_recon    = model.decoder(z_samp)
-
-        # Per-row MSE — mean over features for comparability across runs
-        err = F.mse_loss(x_recon, x_batch, reduction="none").mean(dim=1)
-
+        err        = F.mse_loss(x_recon, x_batch, reduction="none").mean(dim=1)
         z_list.append(z_mu.cpu().numpy())
         err_list.append(err.cpu().numpy())
 
@@ -739,13 +661,12 @@ def encode(model, X_tensor, device, batch_size=1024):
 
 
 # ==============================================================================
-# 10. Diagnostics & Plots
+# 11. Diagnostics & Plots
 # ==============================================================================
 
 def plot_training_curves(history, save_path):
     fig, axes = plt.subplots(1, 3, figsize=(18, 4))
 
-    # Loss curves
     axes[0].plot(history["train_total"], label="Train total", linewidth=1.5)
     axes[0].plot(history["val_total"],   label="Val total",   linewidth=1.5,
                  linestyle="--")
@@ -754,7 +675,6 @@ def plot_training_curves(history, save_path):
     axes[0].legend()
     axes[0].grid(True, alpha=0.3)
 
-    # Reconstruction loss
     axes[1].plot(history["train_recon"], label="Train recon", linewidth=1.5)
     axes[1].plot(history["val_recon"],   label="Val recon",   linewidth=1.5,
                  linestyle="--")
@@ -763,10 +683,9 @@ def plot_training_curves(history, save_path):
     axes[1].legend()
     axes[1].grid(True, alpha=0.3)
 
-    # KL and clf
-    axes[2].plot(history["train_kl"],  label="KL",     linewidth=1.5,
+    axes[2].plot(history["train_kl"],  label="KL",  linewidth=1.5,
                  color="orange")
-    axes[2].plot(history["train_clf"], label="Clf",     linewidth=1.5,
+    axes[2].plot(history["train_clf"], label="Clf", linewidth=1.5,
                  color="red")
     axes[2].set_title("KL & Classification Loss")
     axes[2].set_xlabel("Epoch")
@@ -836,26 +755,25 @@ def print_latent_diagnostics(z_train, y_train, z_test,
 
 
 # ==============================================================================
-# 11. Main
+# 12. Main
 # ==============================================================================
 
 def main():
 
     print(f"\n{'='*60}")
-    print(f"[08B] Beta-VAE v2 (corrected ELBO) — START")
+    print(f"[08B] Beta-VAE v3 — {vcfg['description']}")
     print(f"{'='*60}")
     print(f"  Input features : {n_features}")
     print(f"  Continuous     : {n_cont}")
     print(f"  Binary         : {n_binary}  {bin_cols}")
     print(f"  z_dim          : {CFG['z_dim']}")
-    print(f"  beta           : {CFG['beta']}  "
-          f"(retuned — was 3.0 before loss scaling fix)")
+    print(f"  beta           : {CFG['beta']}")
     print(f"  gamma          : {CFG['gamma']}  "
           f"({'supervised' if CFG['gamma'] > 0 else 'pure VAE'})")
     print(f"  val_fraction   : {CFG['val_fraction']}")
-    print(f"  PIT            : normal distribution (FIX 2)")
+    print(f"  Output         : {PATH_FEATURES_LATENT.name}")
 
-    # ── 11A. Build model ──────────────────────────────────────────────────────
+    # Build model
     model = BetaVAE(
         input_dim       = n_features,
         encoder_dims    = CFG["encoder_dims"],
@@ -875,48 +793,54 @@ def main():
           f"{' → '.join(str(d) for d in CFG['decoder_dims'])} "
           f"→ {n_features}")
 
-    # ── 11B. Train ────────────────────────────────────────────────────────────
-    print(f"\n[08B] Training...")
+    # Train
+    print(f"\n[08B] Training [{VAE_INPUT.upper()}]...")
     history = train_vae(model, train_loader, val_loader, CFG, DEVICE)
 
-    # ── 11C. Save model ───────────────────────────────────────────────────────
+    # Save model weights — separate dirs per VAE_INPUT
     torch.save(model.state_dict(),
-               DIR_MODELS / "vae_weights.pt")
+               DIR_MODELS_RUN / "vae_weights.pt")
     torch.save(model.encoder.state_dict(),
-               DIR_MODELS / "encoder_weights.pt")
+               DIR_MODELS_RUN / "encoder_weights.pt")
 
     cfg_save = {
         **CFG,
+        "vae_input"  : VAE_INPUT,
+        "description": vcfg["description"],
         "n_features" : n_features,
         "n_cont"     : n_cont,
         "n_binary"   : n_binary,
         "col_order"  : col_order,
         "binary_cols": bin_cols,
         "pit_dist"   : "normal",
-        "fixes"      : ["loss_reduction", "pit_normal",
-                        "val_early_stopping", "bce_with_logits"],
+        "output_file": str(PATH_FEATURES_LATENT),
     }
-    with open(DIR_MODELS / "vae_config.json", "w") as f:
+    with open(DIR_MODELS_RUN / "vae_config.json", "w") as f:
         json.dump(cfg_save, f, indent=2)
 
-    print(f"\n[08B] Model saved to: {DIR_MODELS}")
+    print(f"\n[08B] Model saved to: {DIR_MODELS_RUN}")
 
-    # ── 11D. Encode all splits ────────────────────────────────────────────────
+    # Encode all splits
     print("\n[08B] Encoding train / test / OOS...")
     z_train, err_train = encode(model, X_train_t, DEVICE)
     z_test,  err_test  = encode(model, X_test_t,  DEVICE)
     z_oos,   err_oos   = encode(model, X_oos_t,   DEVICE)
 
-    # ── 11E. Diagnostics ──────────────────────────────────────────────────────
-    y_train_full_np = y_train_full
-    print_latent_diagnostics(z_train, y_train_full_np,
+    # Diagnostics
+    print_latent_diagnostics(z_train, y_train_full,
                              z_test, err_train, err_test)
-    plot_training_curves(history,
-                         DIR_FIGURES / "vae_training_curves_v2.png")
-    plot_latent_space(z_train, y_train_full_np,
-                      DIR_FIGURES / "vae_latent_space_v2.png")
 
-    # ── 11F. Assemble features_latent ─────────────────────────────────────────
+    fig_suffix = vcfg["fig_suffix"]
+    plot_training_curves(
+        history,
+        DIR_FIGURES / f"vae_training_curves_{fig_suffix}.png"
+    )
+    plot_latent_space(
+        z_train, y_train_full,
+        DIR_FIGURES / f"vae_latent_space_{fig_suffix}.png"
+    )
+
+    # Assemble features_latent
     z_cols = [f"z{i+1}" for i in range(CFG["z_dim"])]
 
     def build_latent_df(src_df, z_arr, err_arr, split_name):
@@ -937,13 +861,13 @@ def main():
 
     print(f"\n[08B] features_latent shape: {features_latent.shape}")
     print(f"  Columns: {list(features_latent.columns)}")
+    print(f"  Output : {PATH_FEATURES_LATENT}")
 
-    # ── 11G. Save ─────────────────────────────────────────────────────────────
+    # Save
     features_latent.to_parquet(PATH_FEATURES_LATENT, index=False)
     print(f"\n[08B] Saved: {PATH_FEATURES_LATENT}")
-    print(f"  Load in R: arrow::read_parquet(PATH_FEATURES_LATENT)")
 
-    # ── 11H. Assertions ───────────────────────────────────────────────────────
+    # Assertions
     latent_cols = z_cols + ["vae_recon_error"]
 
     assert features_latent[latent_cols].isna().sum().sum() == 0, \
@@ -962,7 +886,7 @@ def main():
               f"{CFG['beta'] * 0.5:.2f} and retraining.")
 
     print("\n[08B] All assertions passed.")
-    print(f"[08B] DONE")
+    print(f"[08B] DONE [{VAE_INPUT.upper()}] → {PATH_FEATURES_LATENT.name}")
     print(f"{'='*60}\n")
 
 

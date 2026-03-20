@@ -9,7 +9,6 @@
 #
 # USAGE:
 #   source("config.R") at the top of every pipeline script.
-#   00_Master.R sources this first, before any stage runs.
 #
 #==============================================================================#
 
@@ -30,7 +29,6 @@ DIR_DATA   <- file.path(DIR_ROOT, "02_Data")
 DIR_OUTPUT <- file.path(DIR_ROOT, "03_Output")
 
 ## CRSP
-## Note: Data_CRSP_Directory kept as alias for 01_Universe.R compatibility
 Data_CRSP_Directory <- file.path(DIR_DATA, "CRSP")
 DIR_CRSP_RAW        <- file.path(Data_CRSP_Directory, "Raw")
 DIR_CRSP_PROC       <- file.path(Data_CRSP_Directory, "Processed")
@@ -53,8 +51,7 @@ DIR_MODELS  <- file.path(DIR_OUTPUT, "Models")
 
 ## Create all directories if they don't exist
 invisible(lapply(
-  c(DIR_CRSP_RAW, DIR_CRSP_PROC,
-    DIR_COMP_RAW, DIR_COMP_PROC,
+  c(DIR_CRSP_RAW, DIR_CRSP_PROC, DIR_COMP_RAW, DIR_COMP_PROC,
     DIR_MACRO, DIR_LABELS, DIR_FEATURES, DIR_PANEL,
     DIR_FIGURES, DIR_TABLES, DIR_MODELS),
   dir.create, showWarnings = FALSE, recursive = TRUE
@@ -100,8 +97,6 @@ PATH_LABELS_BASE <- file.path(DIR_LABELS,  "labels_base.rds")
 PATH_LABELS_GRID <- file.path(DIR_LABELS,  "labels_all_grid.rds")
 PATH_LABELS_DIAG <- file.path(DIR_LABELS,  "csi_diagnostics.rds")
 PATH_FIGURE_CSI  <- file.path(DIR_FIGURES, "csi_events_per_year_base.png")
-## Note: individual grid files labels_<param_id>.rds use inline file.path()
-## in 05_CSI_Label.R since param_id is dynamic — this is acceptable.
 
 #------------------------------------------------------------------------------#
 # File paths — 06_Merge.R
@@ -111,16 +106,32 @@ PATH_PANEL_RAW <- file.path(DIR_PANEL, "panel_raw.rds")
 
 #------------------------------------------------------------------------------#
 # File paths — 06B_Feature_Eng.R
+#
+#   features_raw.rds  : full engineered features (~463)       [M3 input]
+#   features_fund.rds : fundamentals only, no price features  [M1 + M2 VAE input]
 #------------------------------------------------------------------------------#
 
-PATH_FEATURES_RAW <- file.path(DIR_FEATURES, "features_raw.rds")
+PATH_FEATURES_RAW  <- file.path(DIR_FEATURES, "features_raw.rds")
+PATH_FEATURES_FUND <- file.path(DIR_FEATURES, "features_fund.rds")
 
 #------------------------------------------------------------------------------#
-# File paths — 06C_Autoencoder.R
+# File paths — 08B_Autoencoder.py
+#
+#   Run 08B with VAE_INPUT="fund" → features_latent_fund.parquet  [M2]
+#   Run 08B with VAE_INPUT="raw"  → features_latent_raw.parquet   [M4]
+#
+#   M2: VAE trained on fund features only — tests whether VAE adds signal
+#       over raw fundamentals. Compare M1 vs M2.
+#   M4: VAE trained on full raw features — tests VAE compression of all
+#       signals. Compare M3 vs M4.
 #------------------------------------------------------------------------------#
 
-PATH_FEATURES_LATENT <- file.path(DIR_FEATURES, "features_latent.parquet")
-PATH_FEATURES_FUND <- file.path(DIR_FEATURES, "features_fund.rds")   # ADD THIS — M1
+PATH_FEATURES_LATENT_FUND <- file.path(DIR_FEATURES, "features_latent_fund.parquet")
+PATH_FEATURES_LATENT_RAW  <- file.path(DIR_FEATURES, "features_latent_raw.parquet")
+
+## Legacy alias for any downstream script using PATH_FEATURES_LATENT directly
+## Points to fund latent (M2) as the primary/default VAE output
+PATH_FEATURES_LATENT <- PATH_FEATURES_LATENT_FUND
 
 #------------------------------------------------------------------------------#
 # File paths — 07_Feature_Sel.R
@@ -144,8 +155,8 @@ PATH_EVAL_RESULTS <- file.path(DIR_TABLES, "evaluation_results.rds")
 # File paths — 11_Results.R
 #------------------------------------------------------------------------------#
 
-PATH_INDEX_RETURNS    <- file.path(DIR_TABLES,  "index_returns.rds")
-PATH_BACKTEST_SUMMARY <- file.path(DIR_TABLES,  "backtest_summary.rds")
+PATH_INDEX_RETURNS    <- file.path(DIR_TABLES, "index_returns.rds")
+PATH_BACKTEST_SUMMARY <- file.path(DIR_TABLES, "backtest_summary.rds")
 
 #------------------------------------------------------------------------------#
 # File paths — 12_Robustness.R
@@ -164,75 +175,26 @@ END_DATE   <- as.Date("2024-12-31")
 # 4. Universe Filters
 #==============================================================================#
 
-VALID_EXCHANGES    <- c("N", "A", "Q")   # NYSE, AMEX, NASDAQ
+VALID_EXCHANGES    <- c("N", "A", "Q")
 EXCLUDE_SECTYPES   <- c("FUND")
-MIN_LIFETIME_YEARS <- 5                  # Applied in 06_Feature_Engineering.R only
-VALID_SHARETYPES   <- c("NS", NA)        # Normal shares; NA = legacy pre-classification
-VALID_SUBTYPES     <- c("COM", NA)       # Common stock; NA = legacy
+MIN_LIFETIME_YEARS <- 5
+VALID_SHARETYPES   <- c("NS", NA)
+VALID_SUBTYPES     <- c("COM", NA)
 
 #==============================================================================#
 # 5. CSI Label Parameters
-#
-#   DEFINITION USED IN THIS PIPELINE:
-#   ---------------------------------
-#   Implemented as drawdown from rolling peak:
-#
-#     Drawdown(t) = Price(t) / max(Price(s), s <= t) - 1
-#
-#   Economically cleaner than cumulative-from-first-observation:
-#   reference-point agnostic, captures what a portfolio manager observes,
-#   and avoids penalising stocks with long prior appreciation.
-#
-#   THREE PARAMETERS — ALL T VALUES ARE IN MONTHS:
-#
-#     CSI_C : Drawdown threshold — initial crash triggers when
-#             Drawdown(t) < CSI_C.
-#             Paper equivalent: C = -0.80
-#
-#     CSI_M : Maximum recovery allowed during the zombie period.
-#             Measured as return from crash low:
-#               Recovery(t) = Price(t) / Price(crash_low) - 1
-#             Zombie broken if Recovery(t) > CSI_M at any point in T months.
-#             CSI_M = -0.20: stock must stay >= 20% below crash low.
-#             Paper equivalent: M = -0.20
-#
-#     CSI_T : Minimum zombie period length in MONTHS.
-#             18 months ≈ 78 weeks ≈ 1.5 years.
-#             Paper equivalent: T = 78 weeks ≈ 18 months.
-#             Unit is MONTHS here because the pipeline runs on monthly prices.
-#
-#   BASE CASE (replicates paper's chosen parameters):
-#   Do not change for primary analysis. Use CSI_GRID for robustness checks.
 #==============================================================================#
 
-CSI_BASE <- list(
-  C = -0.80,
-  M = -0.20,
-  T = 18L    # MONTHS — equivalent to paper's 78 weeks
-)
+CSI_BASE <- list(C = -0.80, M = -0.20, T = 18L)
 
 #==============================================================================#
 # 5B. CSI Sensitivity Grid
-#
-#   Full factorial grid: 3 x 3 x 3 = 27 parameter combinations.
-#   ALL T VALUES ARE IN MONTHS.
-#
-#   C: -0.60 (moderate crash) to -0.90 (near-wipeout)
-#   M:  0.00 (any recovery breaks zombie) to -0.30 (strict non-recovery)
-#   T:    12 (1 year) to 24 (2 years) in months
-#
-#   Used by:
-#     05_CSI_Label.R  — loops over all 27, saves labels_<param_id>.rds each
-#     12_Robustness.R — compares label stability and model sensitivity
-#
-#   MAX_IMPLOSION_RATE: hard ceiling on CSI prevalence per parameterisation.
-#   Paper achieved 6.6% under base case. 15% allows headroom for loose params.
 #==============================================================================#
 
 CSI_GRID <- expand.grid(
   C = c(-0.60, -0.80, -0.90),
   M = c( 0.00, -0.20, -0.30),
-  T = c(  12L,   18L,   24L),   # MONTHS: 12=1yr, 18=1.5yr, 24=2yr
+  T = c(  12L,   18L,   24L),
   stringsAsFactors = FALSE
 ) |>
   dplyr::arrange(C, M, T) |>
@@ -248,51 +210,26 @@ CSI_GRID <- expand.grid(
 MAX_IMPLOSION_RATE <- 0.15
 
 #==============================================================================#
-# 5C. Data Quality Thresholds — 05_CSI_Label.R
+# 5C. Data Quality Thresholds
 #==============================================================================#
 
-## Maximum number of consecutive missing monthly returns allowed per stock.
-## Stocks exceeding this trigger a pipeline halt — data quality assumption violated.
 MAX_CONSECUTIVE_NA <- 3L
 
 #==============================================================================#
 # 6. Feature Engineering
 #==============================================================================#
 
-## Rolling window lengths in MONTHS (pipeline runs on monthly data)
-WINDOW_SHORT <- 36L   # 3 years in months — minimum for meaningful rolling stats
-WINDOW_LONG  <- 60L   # 5 years unchanged
-
-## Reporting lag: months between fiscal year-end and public filing availability
-## Applied in 06_Merge.R when joining Compustat to the label panel.
-## Standard assumption: 3 months (10-K filed ~90 days after fiscal year-end).
+WINDOW_SHORT         <- 36L
+WINDOW_LONG          <- 60L
 REPORTING_LAG_MONTHS <- 3L
 
-## Aggregation functions applied per fundamental over the rolling window.
 ROLLING_STATS <- c(
-  "mean",
-  "min",
-  "max",
-  "median",
-  "sd",
-  "var",
-  "mean_abs_diff",
-  "median_abs_diff",
-  "autocorr_lag1"
+  "mean", "min", "max", "median", "sd", "var",
+  "mean_abs_diff", "median_abs_diff", "autocorr_lag1"
 )
 
 #==============================================================================#
 # 7. Train / Validation / Out-of-Sample Split
-#
-#   Three-way split required for proper out-of-sample backtesting:
-#     TRAIN  : used for cross-validated hyperparameter optimisation
-#     TEST   : held out for model selection among all trained models
-#     OOS    : never touched until final backtest — true out-of-sample
-#
-#   OOS period (2020–2024) deliberately includes:
-#     - COVID crash (2020) — genuine market stress
-#     - Rate cycle (2022)  — macro regime shift
-#     - Recovery (2023–24) — full cycle coverage
 #==============================================================================#
 
 TRAIN_END  <- as.Date("2015-12-31")
@@ -301,7 +238,6 @@ TEST_END   <- as.Date("2019-12-31")
 OOS_START  <- as.Date("2020-01-01")
 
 SPLIT_GAP_MONTHS <- 0L
-
 CV_FOLDS         <- 5L
 CV_MIN_TRAIN_YRS <- 3L
 
@@ -310,12 +246,12 @@ CV_MIN_TRAIN_YRS <- 3L
 #==============================================================================#
 
 HPO_ITER        <- 50L
-HPO_METRIC      <- "average_precision"   # Threshold-free, robust to imbalance
+HPO_METRIC      <- "average_precision"
 CLASS_WEIGHT    <- NULL
-FPR_CONSTRAINTS <- c(0.03, 0.05)        # Recall evaluated at these fixed FPR levels
+FPR_CONSTRAINTS <- c(0.03, 0.05)
 
 MODELS_TO_RUN <- c(
-  "logistic_regression",   # Interpretable baseline
+  "logistic_regression",
   "random_forest",
   "xgboost",
   "catboost",
@@ -335,13 +271,15 @@ PLOT_DPI    <- 150
 #==============================================================================#
 
 cat("[config.R] Loaded.\n")
-cat("  Period              :", format(START_DATE), "to", format(END_DATE), "\n")
-cat("  Min lifetime        :", MIN_LIFETIME_YEARS, "years (applied in 06_Feature_Engineering.R)\n")
-cat("  CSI base case       : C =", CSI_BASE$C,
-    "| M =", CSI_BASE$M,
+cat("  Period         :", format(START_DATE), "to", format(END_DATE), "\n")
+cat("  CSI base case  : C =", CSI_BASE$C, "| M =", CSI_BASE$M,
     "| T =", CSI_BASE$T, "months\n")
-cat("  CSI grid size       :", nrow(CSI_GRID), "parameter combinations\n")
-cat("  Data split          : Train <=", format(TRAIN_END),
+cat("  Data split     : Train <=", format(TRAIN_END),
     "| Test", format(TEST_START), "–", format(TEST_END),
     "| OOS >=", format(OOS_START), "\n")
-cat("  Seed                :", SEED, "\n")
+cat("  Feature paths  :\n")
+cat("    RAW          :", basename(PATH_FEATURES_RAW),  "\n")
+cat("    FUND         :", basename(PATH_FEATURES_FUND), "\n")
+cat("    LATENT FUND  :", basename(PATH_FEATURES_LATENT_FUND), "\n")
+cat("    LATENT RAW   :", basename(PATH_FEATURES_LATENT_RAW),  "\n")
+cat("  Seed           :", SEED, "\n")

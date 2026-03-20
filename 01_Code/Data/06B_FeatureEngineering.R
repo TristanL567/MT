@@ -673,6 +673,105 @@ cat(sprintf("[06B_Feature_Eng.R] features_raw.rds saved: %d rows, %d cols\n",
             nrow(features_raw), ncol(features_raw)))
 
 #==============================================================================#
+# 13B. Construct features_fund — M1 (fundamentals only, no price features)
+#
+#   Strips all price-derived feature columns from features_raw.
+#   Keeps all fundamental ratios, rolling stats, accounting dynamics,
+#   macro levels, and macro interaction terms (except price × macro).
+#
+#   Stripped families:
+#     Family 10 entirely : mom_*, vol_*, max_dd_*, ann_return, log_return
+#     Price derivatives  : yoy/accel/expmean/expvol/peak_drop/consec/
+#                          acct_mom/roll_* for log_return, ann_return,
+#                          max_dd_*, vol_*, mom_*
+#     Price × macro      : interact_ret_vix
+#
+#   Note: log_mkvalt is a SIZE proxy (market cap), not a price momentum
+#   feature. It is RETAINED — it captures firm scale, not price direction.
+#   Its derivatives (yoy_log_mkvalt, roll_mean_3y_log_mkvalt, etc.) are
+#   also retained for the same reason.
+#==============================================================================#
+
+cat("[06B_Feature_Eng.R] Building features_fund (M1 — no price features)...\n")
+
+PRICE_FEATURE_PATTERNS <- paste(c(
+  "^mom_1m$", "^mom_3m$", "^mom_6m$", "^mom_24m$",
+  "^vol_12m$", "^vol_60m$",
+  "^max_dd_12m$", "^max_dd_60m$",
+  "^ann_return$", "^log_return$",
+  ## YoY / accel / expanding stats of pure price features
+  "^yoy_log_return$",   "^yoy_ann_return$",
+  "^yoy_max_dd_12m$",   "^yoy_max_dd_60m$",
+  "^yoy_vol_12m$",      "^yoy_vol_60m$",
+  "^yoy_mom_1m$",       "^yoy_mom_3m$",
+  "^yoy_mom_6m$",       "^yoy_mom_24m$",
+  "^accel_log_return$", "^accel_ann_return$",
+  "^accel_max_dd_12m$", "^accel_max_dd_60m$",
+  "^accel_vol_12m$",    "^accel_vol_60m$",
+  "^accel_mom_1m$",     "^accel_mom_3m$",
+  "^accel_mom_6m$",     "^accel_mom_24m$",
+  "^expmean_log_return$", "^expmean_ann_return$",
+  "^expmean_max_dd_12m$", "^expmean_max_dd_60m$",
+  "^expmean_vol_12m$",    "^expmean_vol_60m$",
+  "^expmean_mom_1m$",     "^expmean_mom_3m$",
+  "^expmean_mom_6m$",     "^expmean_mom_24m$",
+  "^expvol_log_return$",  "^expvol_ann_return$",
+  "^expvol_max_dd_12m$",  "^expvol_max_dd_60m$",
+  "^expvol_vol_12m$",     "^expvol_vol_60m$",
+  "^expvol_mom_1m$",      "^expvol_mom_3m$",
+  "^expvol_mom_6m$",      "^expvol_mom_24m$",
+  ## Peak/trough/consec/acct_mom of pure price features
+  ## (log_mkvalt is SIZE — kept; max_dd / vol / mom / ret — stripped)
+  "^peak_drop_max_dd_12m$", "^peak_drop_max_dd_60m$",
+  "^trough_rise_max_dd_12m$","^trough_rise_max_dd_60m$",
+  "^consec_decline_log_return$",
+  "^acct_mom_log_return$",
+  ## Rolling stats of pure price features
+  "^roll_mean_3y_log_return$",    "^roll_mean_5y_log_return$",
+  "^roll_min_3y_log_return$",     "^roll_min_5y_log_return$",
+  "^roll_max_3y_log_return$",     "^roll_max_5y_log_return$",
+  "^roll_sd_3y_log_return$",      "^roll_sd_5y_log_return$",
+  "^roll_trend_3y_log_return$",   "^roll_trend_5y_log_return$",
+  "^roll_autocorr_3y_log_return$","^roll_autocorr_5y_log_return$",
+  ## Macro × price interaction
+  "^interact_ret_vix$"
+), collapse = "|")
+
+price_feat_cols <- grep(
+  PRICE_FEATURE_PATTERNS,
+  names(features_raw),
+  value = TRUE, perl = TRUE
+)
+
+cat(sprintf("  Price features to strip: %d\n", length(price_feat_cols)))
+
+features_fund <- features_raw[, .SD,
+                              .SDcols = setdiff(names(features_raw), price_feat_cols)]
+
+saveRDS(features_fund, PATH_FEATURES_FUND)
+
+cat(sprintf(
+  "[06B_Feature_Eng.R] features_fund.rds saved: %d rows, %d feature cols\n",
+  nrow(features_fund),
+  length(setdiff(names(features_fund),
+                 c("permno", "year", "y", "censored", "param_id",
+                   "gvkey", "datadate", "lifetime_years",
+                   "fiscal_year_end_month")))
+))
+
+## Sanity check — confirm key price features are absent and fundamentals present
+stopifnot(!"max_dd_12m" %in% names(features_fund))
+stopifnot(!"vol_60m"    %in% names(features_fund))
+stopifnot(!"mom_24m"    %in% names(features_fund))
+stopifnot(!"log_return" %in% names(features_fund))
+stopifnot( "altman_z"   %in% names(features_fund))
+stopifnot( "roa"        %in% names(features_fund))
+stopifnot( "leverage"   %in% names(features_fund))
+stopifnot( "log_mkvalt" %in% names(features_fund))  # size proxy — retained
+
+cat("[06B_Feature_Eng.R] features_fund assertions passed.\n")
+
+#==============================================================================#
 # 14. Assertions
 #==============================================================================#
 

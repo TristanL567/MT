@@ -1,6 +1,65 @@
+%==== KNITR ===================================================================%
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+
+
+{\ttfamily\noindent\bfseries\color{errorcolor}{\#\# Error in parse\_block(g[-1], g[1], params.src, markdown\_mode): Duplicate chunk label 'setup', which has been used for the chunk:\\\#\# library(knitr)\\\#\# opts\_chunk\$set(echo=FALSE, message=FALSE, warning=FALSE,\\\#\# \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ fig.align="{}center"{}, fig.pos="{}H"{})\\\#\# Path <- this.path::this.dir()\\\#\# setwd(Path)\\\#\# Directory\_LaTeX <- file.path(Path, "{}ML\_Performance\_TristanLeiter\_h11815352.Rnw"{})\\\#\# knit2pdf(Directory\_LaTeX, output = file.path(Path, "{}ML\_Performance\_TristanLeiter\_h11815352.tx"{}))}}\end{kframe}
+\end{knitrout}
+
 %==== START ===================================================================%
 
-\documentclass{report}
+\documentclass{report}\usepackage[]{graphicx}\usepackage[table]{xcolor}
+% maxwidth is the original width if it is less than linewidth
+% otherwise use linewidth (to make sure the graphics do not exceed the margin)
+\makeatletter
+\def\maxwidth{ %
+  \ifdim\Gin@nat@width>\linewidth
+    \linewidth
+  \else
+    \Gin@nat@width
+  \fi
+}
+\makeatother
+
+\definecolor{fgcolor}{rgb}{0.345, 0.345, 0.345}
+\newcommand{\hlnum}[1]{\textcolor[rgb]{0.686,0.059,0.569}{#1}}%
+\newcommand{\hlsng}[1]{\textcolor[rgb]{0.192,0.494,0.8}{#1}}%
+\newcommand{\hlcom}[1]{\textcolor[rgb]{0.678,0.584,0.686}{\textit{#1}}}%
+\newcommand{\hlopt}[1]{\textcolor[rgb]{0,0,0}{#1}}%
+\newcommand{\hldef}[1]{\textcolor[rgb]{0.345,0.345,0.345}{#1}}%
+\newcommand{\hlkwa}[1]{\textcolor[rgb]{0.161,0.373,0.58}{\textbf{#1}}}%
+\newcommand{\hlkwb}[1]{\textcolor[rgb]{0.69,0.353,0.396}{#1}}%
+\newcommand{\hlkwc}[1]{\textcolor[rgb]{0.333,0.667,0.333}{#1}}%
+\newcommand{\hlkwd}[1]{\textcolor[rgb]{0.737,0.353,0.396}{\textbf{#1}}}%
+\let\hlipl\hlkwb
+
+\usepackage{framed}
+\makeatletter
+\newenvironment{kframe}{%
+ \def\at@end@of@kframe{}%
+ \ifinner\ifhmode%
+  \def\at@end@of@kframe{\end{minipage}}%
+  \begin{minipage}{\columnwidth}%
+ \fi\fi%
+ \def\FrameCommand##1{\hskip\@totalleftmargin \hskip-\fboxsep
+ \colorbox{shadecolor}{##1}\hskip-\fboxsep
+     % There is no \\@totalrightmargin, so:
+     \hskip-\linewidth \hskip-\@totalleftmargin \hskip\columnwidth}%
+ \MakeFramed {\advance\hsize-\width
+   \@totalleftmargin\z@ \linewidth\hsize
+   \@setminipage}}%
+ {\par\unskip\endMakeFramed%
+ \at@end@of@kframe}
+\makeatother
+
+\definecolor{shadecolor}{rgb}{.97, .97, .97}
+\definecolor{messagecolor}{rgb}{0, 0, 0}
+\definecolor{warningcolor}{rgb}{1, 0, 1}
+\definecolor{errorcolor}{rgb}{1, 0, 0}
+\newenvironment{knitrout}{}{} % an empty environment to be redefined in TeX
+
+\usepackage{alltt}
 
 \usepackage[left=2.5cm, right=2.5cm, top=2cm, bottom=2.5cm]{geometry}
 \usepackage[utf8]{inputenc}
@@ -20,9 +79,6 @@
 \usepackage{multirow}
 \usepackage{caption}
 \usepackage{subcaption}
-
-%% Required for knitr output environments
-\usepackage{framed}
 \usepackage{listings}
 \usepackage{enumitem}
 \usepackage{array}
@@ -52,20 +108,8 @@
 
 %==== DOCUMENT START ==========================================================%
 
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
 \begin{document}
-
-%==== KNITR ===================================================================%
-
-<<echo=FALSE, eval=FALSE>>=
-library(knitr)
-# opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE,
-#                fig.align="center", fig.pos="H")
-Path <- this.path::this.dir()
-setwd(Path)
-Directory_LaTeX <- file.path(Path, "ML_Performance_TristanLeiter_h11815352.Rnw")
-knit2pdf(Directory_LaTeX, output = file.path(Path, "ML_Performance_TristanLeiter_h11815352.tex"))
-
-@
 
 \begin{titlepage}
     \newgeometry{top=3cm, bottom=3cm, left=2.5cm, right=2.5cm}
@@ -193,26 +237,18 @@ bias. An \textbf{expanding window} design is used throughout:
 \toprule
 \textbf{Fold} & \textbf{Training Period} & \textbf{Validation Period} \\
 \midrule
-1 & \textit{Burn-in} (no training data) & 1993--1997 \\
-2 & 1993--2001 & 2002--2006 \\
-3 & 1993--2006 & 2007--2010 \\
-4 & 1993--2010 & 2011--2015 \\
-5 & 1993--2015 & 2016--2019 (= test set) \\
+1 & \textit{Skipped} (0 rows) & 1993--1997 \\
+2 & 1998--2001 & 2002--2006 \\
+3 & 1998--2006 & 2007--2010 \\
+4 & 1998--2010 & 2011--2015 \\
+5 & 1998--2015 & 2016--2019 (= test set) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\noindent \textit{Note on Fold 1 (burn-in):} The panel starts in 1993, but no observations
-exist prior to 1993 to serve as training data for Fold 1. The years 1993--1997 therefore
-function as a \textbf{burn-in period} — they populate the initial training window for
-Fold 2, ensuring that rolling 5-year features (e.g.\ \texttt{roll\_mean\_5y\_earn\_yld})
-are populated with sufficient history before the first validation fold begins.
-Fold 1 is skipped for CV metric computation; all subsequent folds use 1993 as their
-training start date.
-
 \noindent The three-way data split is:
 \begin{itemize}
-    \item \textbf{Train} (1993--2015): hyperparameter optimisation via CV
+    \item \textbf{Train} (1998--2015): hyperparameter optimisation via CV
     \item \textbf{Test} (2016--2019): model selection and threshold calibration
     \item \textbf{OOS} (2020--2024): final out-of-sample evaluation — never touched until evaluation
 \end{itemize}

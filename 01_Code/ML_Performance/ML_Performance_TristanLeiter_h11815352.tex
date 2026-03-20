@@ -756,6 +756,146 @@ NeuralNetTorch & — & — & 0.421 \\
 Neural Networks gain weight in the latent feature setting (M4) where the 
 25-dimensional input is well-suited to NN architectures.
 
+
+\section{Individual Model Hyperparameters and Performance}
+
+The \texttt{good\_quality} preset trains 11 distinct model configurations.
+Their hyperparameters and holdout AP scores for M3 (raw features) are shown below —
+this is the most informative setting as it has the largest feature space and 
+the clearest performance differentiation between model families.
+
+\begin{table}[H]
+\centering
+\caption{AutoGluon Individual Model Hyperparameters and Holdout AP — M3 (Raw Features)}
+\rowcolors{2}{gray!10}{white}
+\small
+\begin{tabular}{lrp{8.5cm}}
+\toprule
+\textbf{Model} & \textbf{Holdout AP} & \textbf{Key Hyperparameters} \\
+\midrule
+LightGBMLarge    & 0.6972 & lr=0.03, num\_leaves=128, feature\_fraction=0.9, min\_data\_in\_leaf=3, rounds=4,687 \\
+LightGBMXT       & 0.6848 & lr=0.05, extra\_trees=True, rounds=1,855 \\
+LightGBM         & 0.6835 & lr=0.05, rounds=720 \\
+CatBoost         & 0.6829 & lr=0.05, iterations=768 (from 10,000 ceiling via early stopping) \\
+RandomForestEntr & 0.6799 & n\_estimators=300, max\_depth=15, criterion=entropy \\
+RandomForestGini & 0.6728 & n\_estimators=300, max\_depth=15, criterion=gini \\
+ExtraTreesEntr   & 0.6586 & n\_estimators=300, max\_depth=15, criterion=entropy \\
+NeuralNetTorch   & 0.6529 & lr=0.0003, 4 hidden layers (128 units), dropout=0.1, epochs=3 (early stop) \\
+ExtraTreesGini   & 0.6527 & n\_estimators=300, max\_depth=15, criterion=gini \\
+NeuralNetFastAI  & 0.6470 & lr=0.01, emb\_drop=0.1, best epoch=5 \\
+XGBoost          & 0.6281 & lr=0.10, n\_estimators=109, default depth and subsampling \\
+\midrule
+\textbf{WeightedEnsemble} & \textbf{0.6976} & Weights: LightGBMLarge=0.684, CatBoost=0.158, RF=0.105, LGBMXT=0.053 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Why LightGBMLarge Dominates}
+
+LightGBMLarge achieves the highest single-model AP (0.697) and receives 68\% of the
+ensemble weight in M1 and effectively 100\% in M3. Three hyperparameter choices explain this:
+
+\begin{enumerate}
+    \item \textbf{num\_leaves=128 (vs default $\sim$31):} Financial distress follows
+    highly non-linear, interaction-heavy patterns — e.g.\ high leverage is dangerous
+    only when combined with low cash coverage and declining earnings. Deep trees with
+    128 leaves can learn these multi-way interactions. Shallower models miss the
+    compound deterioration dynamics that precede CSI events.
+
+    \item \textbf{learning\_rate=0.03 with 4,687 rounds:} A slow learning rate with
+    many iterations allows the model to make incremental, precise corrections rather
+    than overshooting. The 4,687 rounds (vs 720 for standard LightGBM) indicate the
+    model continued finding marginal signal across a long training trajectory —
+    consistent with the high-dimensional, noisy nature of fundamental accounting data
+    where each additional boosting step extracts a small but genuine signal.
+
+    \item \textbf{feature\_fraction=0.9:} Using 90\% of features per tree introduces
+    mild decorrelation between trees, reducing ensemble variance without the aggressive
+    subsampling (50\%) used in the hand-tuned XGBoost. With 452--471 features, 90\%
+    still provides full coverage of all feature families per split.
+\end{enumerate}
+
+\subsection{Why AutoGluon's XGBoost Underperforms}
+
+AutoGluon's internal XGBoost scores 0.628 on the M3 holdout — the weakest
+tree-based model — despite XGBoost being the strongest algorithm when hand-tuned
+(0.682 test AP). The reason is entirely the default hyperparameter configuration:
+
+\begin{table}[H]
+\centering
+\caption{AutoGluon XGBoost vs Hand-Tuned XGBoost: Parameter Comparison}
+\rowcolors{2}{gray!10}{white}
+\begin{tabular}{lrrl}
+\toprule
+\textbf{Parameter} & \textbf{AutoGluon Default} & \textbf{Hand-Tuned (M3)} & \textbf{Effect of Default} \\
+\midrule
+learning\_rate      & 0.10  & 0.019 & $5\times$ too fast — overshoots optimal weights \\
+subsample           & 1.00  & 0.50  & No row subsampling — higher variance \\
+colsample\_bytree   & 1.00  & 0.50  & All features used per split — higher variance \\
+gamma               & 0.00  & 4.40  & No split complexity penalty — memorises noise \\
+lambda (L2)         & 1.00  & 5.00  & Insufficient leaf weight regularisation \\
+alpha (L1)          & 0.00  & 2.70  & No sparsity — uses redundant features \\
+n\_rounds           & 109   & 110   & Comparable (early stopping works correctly) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The Bayesian HPO explicitly searches for heavy regularisation
+($\gamma=4.4$, $\lambda=5.0$, $\alpha=2.7$) and aggressive subsampling (50\%)
+to counteract overfitting on the noisy high-dimensional feature space.
+AutoGluon's default XGBoost configuration never explores this region,
+confirming the value of explicit hyperparameter search for this problem.
+
+\subsection{Why Neural Networks Underperform on Raw Features}
+
+Both NeuralNetTorch and NeuralNetFastAI score near the bottom of the M1/M3
+leaderboard (AP 0.529--0.653) but gain significant ensemble weight in the
+latent settings (M4: 42\% weight for NeuralNetTorch). Three structural reasons
+explain this pattern:
+
+\begin{itemize}
+    \item \textbf{Early stopping fires aggressively:} NeuralNetTorch ran only
+    3 epochs on the M3 holdout before early stopping. With 452--471 features
+    and heavy class imbalance (10\% CSI prevalence), the network overfits
+    within a handful of epochs and never reaches a well-generalised solution.
+    The 4-layer, 128-unit architecture is not well-regularised for such
+    high-dimensional tabular inputs.
+
+    \item \textbf{Tabular financial data does not benefit from representation learning:}
+    Financial ratios are already highly engineered — the model receives
+    \texttt{roll\_mean\_5y\_earn\_yld} rather than raw financial statements.
+    Neural networks excel at learning representations from raw, unstructured data.
+    When features already encode domain-specific structure, the non-linear
+    transformations of gradient boosting outperform neural architectures.
+
+    \item \textbf{Improved performance on latent inputs (M4):}
+    In the 25-dimensional latent space produced by the VAE, NeuralNetTorch
+    scores competitively (0.555 holdout) and receives 42\% ensemble weight.
+    The VAE has already performed the representation learning step — the compact,
+    dense, continuous latent space suits neural architectures better than
+    the raw sparse tabular matrix.
+\end{itemize}
+
+\subsection{Why Random Forests Are Competitive but Not Dominant}
+
+RandomForest and ExtraTrees score 0.651--0.680 on M3 — solid but consistently
+below LightGBM variants. Their fixed hyperparameters (\texttt{n\_estimators=300},
+\texttt{max\_depth=15}) are not tuned by AutoGluon, and two structural limitations apply:
+
+\begin{itemize}
+    \item \textbf{Bagging without boosting:} Random Forests reduce variance through
+    averaging but cannot correct systematic bias. Boosted models iteratively
+    correct residuals — better suited to the difficult minority-class detection
+    task where early trees will systematically underpredict CSI probability.
+
+    \item \textbf{No explicit class-imbalance handling:}
+    AutoGluon's RF/XT implementations do not apply \texttt{scale\_pos\_weight}
+    or class-balanced sampling. With 90\% non-CSI prevalence, trees split
+    predominantly on majority-class boundaries, reducing sensitivity on the CSI minority.
+    The boosting algorithms handle this implicitly through residual weighting.
+\end{itemize}
+
+
 \section{AutoGluon Results}
 
 \begin{table}[H]

@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (MiKTeX 26.2) (preloaded format=pdflatex 2026.3.4)  20 MAR 2026 16:58
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (MiKTeX 26.2) (preloaded format=pdflatex 2026.3.4)  20 MAR 2026 17:18
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -846,50 +846,79 @@ Chapter 4.
 
 ] [12] [13]
 Chapter 5.
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <9> on input line 772.
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <6> on input line 772.
+
+Underfull \hbox (badness 10000) in paragraph at lines 776--777
+[]|\T1/lmr/m/n/9 lr=0.03, num_leaves=128, fea-ture_fraction=0.9,
+ []
+
+
+Underfull \hbox (badness 2529) in paragraph at lines 783--784
+[]|\T1/lmr/m/n/9 lr=0.0003, 4 hid-den lay-ers (128 units), dropout=0.1,
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 788--789
+[]|\T1/lmr/m/n/9 Weights: Light-GBM-Large=0.684, Cat-Boost=0.158,
+ []
+
 [14
 
-] [15]
+]
+Overfull \hbox (50.26031pt too wide) in paragraph at lines 828--841
+ [][] 
+ []
+
+[15]
+Overfull \hbox (46.75699pt too wide) in paragraph at lines 891--896
+[]\T1/lmr/bx/n/10 No ex-plicit class-imbalance han-dling: \T1/lmr/m/n/10 Au-to-
+Gluon's RF/XT im-ple-men-ta-tions do not ap-ply \T1/lmtt/m/n/10 scale_pos_weigh
+t
+ []
+
+[16] [17]
 Chapter 6.
 
-Package natbib Warning: Citation `Tewari2024' on page 16 undefined on input lin
-e 860.
+Package natbib Warning: Citation `Tewari2024' on page 18 undefined on input lin
+e 1000.
 
 
-Package natbib Warning: Citation `Tewari2024' on page 16 undefined on input lin
-e 870.
+Package natbib Warning: Citation `Tewari2024' on page 18 undefined on input lin
+e 1010.
 
-[16
+[18
 
 ]
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <12> on input line 930.
+(Font)              <12> on input line 1070.
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <8> on input line 930.
-LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <6> on input line 930.
+(Font)              <8> on input line 1070.
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 930.
+(hyperref)                removing `math shift' on input line 1070.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\leftrightarrow' on input line 930.
+(hyperref)                removing `\leftrightarrow' on input line 1070.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 930.
+(hyperref)                removing `math shift' on input line 1070.
 
 
-Package natbib Warning: Citation `Tewari2024' on page 17 undefined on input lin
-e 972.
+Package natbib Warning: Citation `Tewari2024' on page 19 undefined on input lin
+e 1112.
 
 
-Overfull \hbox (4.80801pt too wide) in paragraph at lines 972--973
+Overfull \hbox (4.80801pt too wide) in paragraph at lines 1112--1113
 \T1/lmr/m/it/10 +11pp on OOS R@FPR3. How-ever, M3 re-lies on con-tem-po-ra-ne-o
 us draw-down sig-nals (\T1/lmtt/m/it/10 max_dd_12m\T1/lmr/m/it/10 :
  []
 
-[17] (ML_Performance_TristanLeiter_h11815352.bbl [18]
+[19] (ML_Performance_TristanLeiter_h11815352.bbl [20]
 
 Package natbib Warning: Empty `thebibliography' environment on input line 8.
 
@@ -897,7 +926,7 @@ Package natbib Warning: Empty `thebibliography' environment on input line 8.
 
 Package natbib Warning: There were undefined citations.
 
-[19
+[21
 
 ] (ML_Performance_TristanLeiter_h11815352.aux)
  ***********
@@ -906,38 +935,40 @@ L3 programming layer <2026-01-19>
  ***********
 Package rerunfilecheck Info: File `ML_Performance_TristanLeiter_h11815352.out' 
 has not changed.
-(rerunfilecheck)             Checksum: D66E5488CE2C20345D34B2CC84E1E34F;11551.
+(rerunfilecheck)             Checksum: 197176A2BA506E83683AFFFD960D0E75;12975.
  ) 
 Here is how much of TeX's memory you used:
- 15568 strings out of 467867
- 247678 string characters out of 5413943
- 676218 words of memory out of 5000000
- 44071 multiletter control sequences out of 15000+600000
- 706675 words of font info for 92 fonts, out of 8000000 for 9000
+ 15598 strings out of 467867
+ 248039 string characters out of 5413943
+ 674221 words of memory out of 5000000
+ 44084 multiletter control sequences out of 15000+600000
+ 716682 words of font info for 99 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  75i,12n,83p,499b,582s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <C:/Users/Tristan Leiter/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/
 lmbx10.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs/MiKTeX/fonts/type1/p
 ublic/lm/lmbx12.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs/MiKTeX/font
-s/type1/public/lm/lmbxi10.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs/M
-iKTeX/fonts/type1/public/lm/lmcsc10.pfb><C:/Users/Tristan Leiter/AppData/Local/
-Programs/MiKTeX/fonts/type1/public/lm/lmex10.pfb><C:/Users/Tristan Leiter/AppDa
-ta/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi10.pfb><C:/Users/Tristan Lei
-ter/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi7.pfb><C:/Users/Tri
-stan Leiter/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr10.pfb><C:/U
-sers/Tristan Leiter/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr12.p
+s/type1/public/lm/lmbx9.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs/MiK
+TeX/fonts/type1/public/lm/lmbxi10.pfb><C:/Users/Tristan Leiter/AppData/Local/Pr
+ograms/MiKTeX/fonts/type1/public/lm/lmcsc10.pfb><C:/Users/Tristan Leiter/AppDat
+a/Local/Programs/MiKTeX/fonts/type1/public/lm/lmex10.pfb><C:/Users/Tristan Leit
+er/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi10.pfb><C:/Users/Tri
+stan Leiter/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi7.pfb><C:/U
+sers/Tristan Leiter/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr10.p
 fb><C:/Users/Tristan Leiter/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm
-/lmr5.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs/MiKTeX/fonts/type1/pu
-blic/lm/lmr7.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs/MiKTeX/fonts/t
-ype1/public/lm/lmri10.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs/MiKTe
-X/fonts/type1/public/lm/lmsy10.pfb><C:/Users/Tristan Leiter/AppData/Local/Progr
-ams/MiKTeX/fonts/type1/public/lm/lmsy7.pfb><C:/Users/Tristan Leiter/AppData/Loc
-al/Programs/MiKTeX/fonts/type1/public/lm/lmtt10.pfb><C:/Users/Tristan Leiter/Ap
-pData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmtti10.pfb>
-Output written on ML_Performance_TristanLeiter_h11815352.pdf (20 pages, 418431 
+/lmr12.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs/MiKTeX/fonts/type1/p
+ublic/lm/lmr5.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs/MiKTeX/fonts/
+type1/public/lm/lmr7.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs/MiKTeX
+/fonts/type1/public/lm/lmr9.pfb><C:/Users/Tristan Leiter/AppData/Local/Programs
+/MiKTeX/fonts/type1/public/lm/lmri10.pfb><C:/Users/Tristan Leiter/AppData/Local
+/Programs/MiKTeX/fonts/type1/public/lm/lmsy10.pfb><C:/Users/Tristan Leiter/AppD
+ata/Local/Programs/MiKTeX/fonts/type1/public/lm/lmsy7.pfb><C:/Users/Tristan Lei
+ter/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmtt10.pfb><C:/Users/Tr
+istan Leiter/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmtti10.pfb>
+Output written on ML_Performance_TristanLeiter_h11815352.pdf (22 pages, 493261 
 bytes).
 PDF statistics:
- 535 PDF objects out of 1000 (max. 8388607)
- 120 named destinations out of 1000 (max. 500000)
- 449 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 585 PDF objects out of 1000 (max. 8388607)
+ 132 named destinations out of 1000 (max. 500000)
+ 489 words of extra memory for PDF output out of 10000 (max. 10000000)
 

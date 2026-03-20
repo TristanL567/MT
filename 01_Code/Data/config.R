@@ -120,6 +120,7 @@ PATH_FEATURES_RAW <- file.path(DIR_FEATURES, "features_raw.rds")
 #------------------------------------------------------------------------------#
 
 PATH_FEATURES_LATENT <- file.path(DIR_FEATURES, "features_latent.parquet")
+PATH_FEATURES_FUND <- file.path(DIR_FEATURES, "features_fund.rds")   # ADD THIS — M1
 
 #------------------------------------------------------------------------------#
 # File paths — 07_Feature_Sel.R

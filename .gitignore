@@ -1,8 +1,13 @@
+# R specific files
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+.Renviron
 
+# Data and Research folders
 02_Data/
 Research/
-.Renviron
+
+# Specific Output Models
+03_Output/Models/AutoGluon/

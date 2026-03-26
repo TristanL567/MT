@@ -187,24 +187,30 @@ incl_annual_ret <- merge(
   all.x = FALSE
 )[, .(
   ann_ret  = prod(1 + ret, na.rm=TRUE) - 1,
-  n_months = .N
+  n_months = .N,
+  strategy = "bench"                        ## add here so columns match excl_annual_ret
 ), by = .(permno, port_year)]
-incl_annual_ret[, strategy := "bench"]
 
 ## Summary statistics
 cat("\n  Annual return distribution — excluded vs included firms:\n")
 cat("  (negative mean for excluded = good; strategy correctly excluded losers)\n\n")
 
-ret_summary <- rbindlist(list(excl_annual_ret, incl_annual_ret))[
+## Combine excluded + included, match by column name explicitly
+all_annual_ret <- rbindlist(
+  list(excl_annual_ret, incl_annual_ret),
+  use.names = TRUE
+)
+
+ret_summary <- all_annual_ret[
   n_months >= 6  ## require at least 6 months of data
 ][, .(
-  n_firms   = .N,
-  mean_ret  = round(mean(ann_ret,   na.rm=TRUE)*100, 2),
-  median_ret = round(median(ann_ret, na.rm=TRUE)*100, 2),
-  sd_ret    = round(sd(ann_ret,     na.rm=TRUE)*100, 2),
-  pct_neg   = round(mean(ann_ret < 0, na.rm=TRUE)*100, 1),
-  pct_below_minus20 = round(mean(ann_ret < -0.20, na.rm=TRUE)*100, 1),
-  pct_below_minus50 = round(mean(ann_ret < -0.50, na.rm=TRUE)*100, 1)
+  n_firms            = .N,
+  mean_ret           = round(mean(ann_ret,              na.rm=TRUE)*100, 2),
+  median_ret         = round(median(ann_ret,            na.rm=TRUE)*100, 2),
+  sd_ret             = round(sd(ann_ret,                na.rm=TRUE)*100, 2),
+  pct_neg            = round(mean(ann_ret < 0,          na.rm=TRUE)*100, 1),
+  pct_below_minus20  = round(mean(ann_ret < -0.20,      na.rm=TRUE)*100, 1),
+  pct_below_minus50  = round(mean(ann_ret < -0.50,      na.rm=TRUE)*100, 1)
 ), by = strategy]
 
 print(ret_summary, row.names = FALSE)
@@ -215,7 +221,7 @@ plot_dt <- rbindlist(list(
                   .(ann_ret, group = paste0(STRAT_LABELS[strategy], " (excluded)"))],
   incl_annual_ret[n_months >= 6,
                   .(ann_ret, group = "Benchmark (included)")]
-))
+), use.names = TRUE)
 
 p_excl_dist <- ggplot(plot_dt[ann_ret >= -1 & ann_ret <= 3],
                       aes(x=ann_ret, fill=group, colour=group)) +
@@ -250,12 +256,15 @@ excl_mean_ret <- excl_annual_ret[n_months >= 6,
 setnames(excl_mean_ret, "port_year", "year")
 
 bench_mean_ret <- incl_annual_ret[n_months >= 6,
-                                  .(mean_ret = mean(ann_ret, na.rm=TRUE),
-                                    strategy = "bench"),
+                                  .(strategy = "bench",
+                                    mean_ret = mean(ann_ret, na.rm=TRUE)),
                                   by = .(year = port_year)]
 
-ret_by_year <- rbindlist(list(excl_mean_ret[strategy %in% c("s1","s2")],
-                              bench_mean_ret))
+ret_by_year <- rbindlist(
+  list(excl_mean_ret[strategy %in% c("s1","s2")],
+       bench_mean_ret),
+  use.names = TRUE
+)
 
 p_excl_ret_yr <- ggplot(ret_by_year,
                         aes(x=year, y=mean_ret,

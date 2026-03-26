@@ -76,13 +76,23 @@ cat("\n[11_Results.R] START:", format(Sys.time()), "\n")
 UNIVERSE_SIZE        <- 3000L      # pseudo-Russell 3000 (top N by mktcap)
 MIN_MKTCAP_MM        <- 100        # minimum market cap $100M to enter universe
 
-## Threshold — FPR=5% calibrated on test set
-## These are read from eval_threshold.rds below (auto-populated)
-## Override manually here if needed:
+## ── Exclusion mode ──────────────────────────────────────────────────────────
+## "rank"      : exclude the top EXCLUSION_RATE share by predicted score each year
+##               e.g. EXCLUSION_RATE = 0.05 → worst 5% of universe excluded
+##               Robust to probability miscalibration — recommended
+## "threshold" : exclude firms with p_csi > calibrated FPR threshold
+##               Uses eval_threshold.rds from 10_Evaluate.R
+##               Can produce wildly different exclusion rates across years
+EXCLUSION_MODE       <- "rank"     # "rank" | "threshold"
+
+## Rank-based parameters (used when EXCLUSION_MODE = "rank")
+EXCLUSION_RATE_M1    <- 0.05       # exclude top 5% by M1 score per year
+EXCLUSION_RATE_M3    <- 0.05       # exclude top 5% by M3 score per year
+
+## Threshold-based parameters (used when EXCLUSION_MODE = "threshold")
+## Read from eval_threshold.rds — override manually if needed:
 THRESH_M1_OVERRIDE   <- NULL       # e.g. 0.2967 — set NULL to use calibrated
 THRESH_M3_OVERRIDE   <- NULL       # e.g. 0.0145
-EXCLUSION_RATE_M1 <- 0.05   # exclude top 5% by M1 score
-EXCLUSION_RATE_M3 <- 0.05   # exclude top 5% by M3 score
 
 ## Transaction costs (one-way, basis points)
 TRANSACTION_COST_BPS <- 0          # 0 = frictionless | 5 = realistic
@@ -296,10 +306,47 @@ ann <- merge(universe[, .(permno, year, mkvalt_dec, rank_mkvalt)],
              by = c("permno", "year"),
              all.x = TRUE)
 
-## Exclusion flags at threshold
+## ── Exclusion flags ────────────────────────────────────────────────────────
 
-ann[, flag_m1 := rank(-p_m1)/n > (1 - EXCLUSION_RATE_M1)]
-ann[, flag_m3 := rank(-p_m3)/n > (1 - EXCLUSION_RATE_M3)]
+if (EXCLUSION_MODE == "rank") {
+  
+  ## Rank-based: exclude top X% by predicted score within each year
+  ## Firms with no prediction are never flagged (NA score → rank to bottom)
+  ## frank() assigns rank 1 = lowest score, so highest score = highest rank
+  cat(sprintf("  Exclusion mode: RANK | M1 top %.0f%% | M3 top %.0f%%\n",
+              EXCLUSION_RATE_M1*100, EXCLUSION_RATE_M3*100))
+  
+  ann[, flag_m1 := {
+    n_with_pred <- sum(!is.na(p_m1))
+    if (n_with_pred == 0L) rep(FALSE, .N)
+    else {
+      cutoff <- ceiling(n_with_pred * EXCLUSION_RATE_M1)
+      r <- frank(-p_m1, ties.method="first", na.last="keep")
+      !is.na(r) & r <= cutoff
+    }
+  }, by = year]
+  
+  ann[, flag_m3 := {
+    n_with_pred <- sum(!is.na(p_m3))
+    if (n_with_pred == 0L) rep(FALSE, .N)
+    else {
+      cutoff <- ceiling(n_with_pred * EXCLUSION_RATE_M3)
+      r <- frank(-p_m3, ties.method="first", na.last="keep")
+      !is.na(r) & r <= cutoff
+    }
+  }, by = year]
+  
+} else {
+  
+  ## Threshold-based: exclude firms with p_csi > calibrated threshold
+  ## Note: may produce actual FPR far from intended if score distribution
+  ## differs between the calibration set and the universe
+  cat(sprintf("  Exclusion mode: THRESHOLD | M1 θ=%.4f | M3 θ=%.4f\n",
+              THRESH_M1, THRESH_M3))
+  
+  ann[, flag_m1 := (!is.na(p_m1) & p_m1 > THRESH_M1)]
+  ann[, flag_m3 := (!is.na(p_m3) & p_m3 > THRESH_M3)]
+}
 
 ann[, flag_s1 := flag_m1]
 ann[, flag_s2 := flag_m3]
@@ -721,8 +768,12 @@ p_excl <- ggplot(excl_long,
   scale_colour_manual(values=STRAT_COLOURS, labels=STRAT_LABELS) +
   scale_y_continuous(name="Firms excluded") +
   labs(title="Annual Exclusion Count — Firms Flagged per Strategy",
-       subtitle=paste0("FPR=5% threshold | M1 θ=", round(THRESH_M1,3),
-                       " | M3 θ=", round(THRESH_M3,3)),
+       subtitle=if (EXCLUSION_MODE == "rank")
+         paste0("Rank-based | M1 top ", EXCLUSION_RATE_M1*100, "% | M3 top ",
+                EXCLUSION_RATE_M3*100, "% per year")
+       else
+         paste0("Threshold-based | M1 θ=", round(THRESH_M1,3),
+                " | M3 θ=", round(THRESH_M3,3)),
        x=NULL, colour="Strategy") +
   theme_minimal(base_size=12) +
   theme(legend.position="bottom")
@@ -816,3 +867,4 @@ for (s in strat_order) {
 }
 
 cat(sprintf("\n[11_Results.R] DONE: %s\n", format(Sys.time())))
+

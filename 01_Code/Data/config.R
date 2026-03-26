@@ -283,3 +283,78 @@ cat("    FUND         :", basename(PATH_FEATURES_FUND), "\n")
 cat("    LATENT FUND  :", basename(PATH_FEATURES_LATENT_FUND), "\n")
 cat("    LATENT RAW   :", basename(PATH_FEATURES_LATENT_RAW),  "\n")
 cat("  Seed           :", SEED, "\n")
+
+## ============================================================================
+## Figure directory structure — add this block to config.R
+## ============================================================================
+## Call this once at the start of any script that saves figures.
+## All subdirectories are created automatically if they don't exist.
+
+fn_setup_figure_dirs <- function(base_dir = DIR_FIGURES) {
+  
+  dirs <- c(
+    ## Label diagnostics
+    file.path(base_dir, "05_labels"),
+    
+    ## Model outputs — one subfolder per model
+    file.path(base_dir, "09_models", "m1"),
+    file.path(base_dir, "09_models", "m3"),
+    file.path(base_dir, "09_models", "b1"),
+    
+    ## Index construction and backtest
+    file.path(base_dir, "11_index"),
+    
+    ## Exclusion diagnostics
+    file.path(base_dir, "12_evaluation"),
+    
+    ## Robustness checks — one subfolder per part
+    file.path(base_dir, "13_robustness", "partA"),
+    file.path(base_dir, "13_robustness", "partB"),
+    file.path(base_dir, "13_robustness", "partC"),
+    file.path(base_dir, "13_robustness", "partD"),
+    file.path(base_dir, "13_robustness", "partE"),
+    
+    ## Exploratory / validation scripts
+    file.path(base_dir, "explore")
+  )
+  
+  created <- 0L
+  for (d in dirs) {
+    if (!dir.exists(d)) {
+      dir.create(d, recursive = TRUE, showWarnings = FALSE)
+      created <- created + 1L
+    }
+  }
+  
+  if (created > 0L)
+    cat(sprintf("  [figures] Created %d new subdirectories under %s\n",
+                created, base_dir))
+  
+  ## Return named list of paths for use in scripts
+  invisible(list(
+    labels      = file.path(base_dir, "05_labels"),
+    m1          = file.path(base_dir, "09_models", "m1"),
+    m3          = file.path(base_dir, "09_models", "m3"),
+    b1          = file.path(base_dir, "09_models", "b1"),
+    index       = file.path(base_dir, "11_index"),
+    evaluation  = file.path(base_dir, "12_evaluation"),
+    robustness  = file.path(base_dir, "13_robustness"),
+    rob_a       = file.path(base_dir, "13_robustness", "partA"),
+    rob_b       = file.path(base_dir, "13_robustness", "partB"),
+    rob_c       = file.path(base_dir, "13_robustness", "partC"),
+    rob_d       = file.path(base_dir, "13_robustness", "partD"),
+    rob_e       = file.path(base_dir, "13_robustness", "partE"),
+    explore     = file.path(base_dir, "explore")
+  ))
+}
+
+## Path helpers — use these instead of file.path(DIR_FIGURES, "xxx.png")
+## Usage: FIG$index("index_cumulative_ew.png")
+##        FIG$m1("m1_pr_curve.png")
+##        FIG$rob_b("robust_tree_plot.png")
+
+## Also define PATH_LABELS_BUCKET for 05B output
+PATH_LABELS_BUCKET <- file.path(DIR_LABELS, "labels_bucket.rds")
+
+## B1 prediction output paths (parallel to ag_fund/)
+DIR_TABLES_B1 <- file.path(DIR_TABLES, "ag_bucket")

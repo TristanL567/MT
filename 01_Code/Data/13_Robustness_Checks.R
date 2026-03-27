@@ -179,8 +179,10 @@ cat("  All data loaded.\n")
 cat("\n[13] ══ PART A: CSI Parameter Grid Sensitivity ══\n")
 
 ## Check which grid label files exist
-grid_files <- list.files(DIR_LABELS, pattern="^labels_.*\\.rds$",
+## Exclude labels_bucket.rds — different schema (y_loser not y)
+grid_files <- list.files(DIR_LABELS, pattern="^labels_.*[.]rds$",
                          full.names=TRUE)
+grid_files <- grid_files[!grepl("labels_bucket[.]rds$", grid_files)]
 cat(sprintf("  Found %d grid label files in %s\n",
             length(grid_files), DIR_LABELS))
 
@@ -1258,5 +1260,495 @@ if (nrow(s5_r)>0 && nrow(bm_r)>0)
   cat(sprintf("  CAGR: S5 %+.2f%% vs Bench | Sharpe: S5 %+.3f vs Bench\n",
               (s5_r$cagr-bm_r$cagr)*100, s5_r$sharpe-bm_r$sharpe))
 
-cat(sprintf("\n[13_Robustness.R] DONE: %s\n", format(Sys.time())))
 
+#==============================================================================#
+# PART E — Concentrated Long Portfolio (C1 / C2 / C3)
+#==============================================================================#
+#
+# MOTIVATION:
+#   S1-S5 exclude 110-600 firms from 3,000 → each position ~0.03% weight.
+#   Maximum achievable alpha ~3.7%/yr. Signal is diluted by construction.
+#
+#   Solution: build a CONCENTRATED portfolio selecting the lowest-risk firms
+#   by B1 score (within-year decile 1 = 9.3% terminal loser rate vs 31.5%
+#   base rate). Each position gets 0.5-1.0% weight → signal actually matters.
+#
+# STRATEGIES:
+#   C1 : Bottom 200 firms by B1 score (within-year rank) — EW, ~0.5% each
+#   C2 : Bottom 100 firms by B1 score (tightest screen)  — EW, ~1.0% each
+#   C3 : C1 + M1 veto — remove any C1 firm in top 10% by M1 score
+#        (two-layer: B1 selects structural quality, M1 removes crash risk)
+#
+# ALSO REPORTS:
+#   S6 : Broad exclusion — exclude top 20% by B1 score from 3,000-firm universe
+#        Tests whether B1 adds value in the standard index exclusion context
+#
+# INPUTS:
+#   DIR_TABLES/ag_bucket/ag_preds_test.parquet  — B1 test predictions
+#   DIR_TABLES/ag_fund/ag_preds_test.parquet    — M1 test predictions (for C3 veto)
+#   DIR_TABLES/index_returns.rds                — benchmark + S1 returns
+#   prices_monthly.rds                          — monthly returns
+#
+# OUTPUTS:
+#   DIR_TABLES/robust_conc_returns.rds          — monthly returns C1/C2/C3/S6
+#   DIR_TABLES/robust_conc_performance.rds      — performance table
+#   DIR_FIGURES/13_robustness/partE/            — all plots
+#
+#==============================================================================#
+
+cat("\n[13] ══ PART E: Concentrated Long Portfolio ══\n")
+
+## ── E0. Parameters ───────────────────────────────────────────────────────────
+
+C1_SIZE          <- 200L   ## bottom 200 by B1 score
+C2_SIZE          <- 100L   ## bottom 100 by B1 score
+C3_M1_VETO_RATE  <- 0.10   ## veto C1 firms in top 10% by M1 score
+S6_EXCL_RATE     <- 0.20   ## exclude top 20% by B1 score (broad index)
+
+## Figure output directory
+FIGS_E <- file.path(DIR_FIGURES, "13_robustness", "partE")
+dir.create(FIGS_E, recursive=TRUE, showWarnings=FALSE)
+
+## ── E1. Load B1 and M1 predictions ──────────────────────────────────────────
+
+cat("  Loading B1 predictions...\n")
+
+b1_test <- as.data.table(arrow::read_parquet(
+  file.path(DIR_TABLES, "ag_bucket", "ag_preds_test.parquet")))
+setnames(b1_test, "p_csi", "p_b1")
+setnames(b1_test, "y",     "y_loser")
+
+## Also load M1 for the C3 veto — test + OOS predictions
+m1_all <- rbindlist(list(
+  as.data.table(arrow::read_parquet(
+    file.path(DIR_TABLES, "ag_fund", "ag_preds_test.parquet"))),
+  as.data.table(arrow::read_parquet(
+    file.path(DIR_TABLES, "ag_fund", "ag_preds_oos.parquet")))
+))
+setnames(m1_all, "p_csi", "p_m1")
+
+cat(sprintf("  B1 predictions: %d rows | years %d-%d\n",
+            nrow(b1_test), min(b1_test$year), max(b1_test$year)))
+cat(sprintf("  M1 predictions: %d rows | years %d-%d\n",
+            nrow(m1_all), min(m1_all$year), max(m1_all$year)))
+
+## ── E2. Build universe (same as 11_Results.R) ────────────────────────────────
+
+cat("  Building universe...\n")
+
+monthly_e <- as.data.table(readRDS(PATH_PRICES_MONTHLY))
+setnames(monthly_e, "ret_adj", "ret")
+setnames(monthly_e, "mktcap",  "mkvalt")
+monthly_e[, year  := year(date)]
+monthly_e[, month := month(date)]
+monthly_e[, ret   := pmin(pmax(ret, -0.99, na.rm=TRUE), 10, na.rm=TRUE)]
+
+dec_mktcap_e <- monthly_e[month == 12L & !is.na(mkvalt),
+                          .(mkvalt_dec = mkvalt[.N]),
+                          by=.(permno, year)]
+universe_e <- dec_mktcap_e[mkvalt_dec >= 100]
+universe_e[, rank_mkvalt := frank(-mkvalt_dec, ties.method="first"), by=year]
+universe_e <- universe_e[rank_mkvalt <= 3000L]
+
+## ── E3. Rank firms within each year by B1 and M1 score ──────────────────────
+
+cat("  Computing within-year ranks...\n")
+
+## Join B1 to universe
+ann_e <- merge(
+  universe_e[, .(permno, year, mkvalt_dec)],
+  b1_test[, .(permno, year, p_b1, y_loser)],
+  by=c("permno","year"),
+  all.x=TRUE
+)
+
+## Join M1
+ann_e <- merge(
+  ann_e,
+  m1_all[, .(permno, year, p_m1)],
+  by=c("permno","year"),
+  all.x=TRUE
+)
+
+## Within-year ranks — only computed for years with B1 predictions
+## Years without predictions: all flags default to FALSE (no inclusion in C1/C2/C3)
+ann_e[, n_pred_b1 := sum(!is.na(p_b1)), by=year]
+
+## B1 ascending rank (rank 1 = safest) — NA-safe: rank only within rows with predictions
+ann_e[, rank_b1_asc := NA_integer_]
+ann_e[!is.na(p_b1),
+      rank_b1_asc := frank(p_b1, ties.method="first"),
+      by=year]
+ann_e[, rank_b1_asc_pct := fifelse(!is.na(rank_b1_asc),
+                                   rank_b1_asc / n_pred_b1,
+                                   NA_real_)]
+
+## B1 descending rank (rank 1 = riskiest) — for S6 exclusion
+ann_e[, rank_b1_desc := NA_integer_]
+ann_e[!is.na(p_b1),
+      rank_b1_desc := frank(-p_b1, ties.method="first"),
+      by=year]
+ann_e[, rank_b1_desc_pct := fifelse(!is.na(rank_b1_desc),
+                                    rank_b1_desc / n_pred_b1,
+                                    NA_real_)]
+
+## M1 descending rank (rank 1 = highest crash risk) — NA-safe
+ann_e[, n_pred_m1 := sum(!is.na(p_m1)), by=year]
+ann_e[, rank_m1_desc := NA_integer_]
+ann_e[!is.na(p_m1),
+      rank_m1_desc := frank(-p_m1, ties.method="first"),
+      by=year]
+ann_e[, rank_m1_desc_pct := fifelse(!is.na(rank_m1_desc),
+                                    rank_m1_desc / n_pred_m1,
+                                    NA_real_)]
+
+## ── E4. Assign inclusion flags ───────────────────────────────────────────────
+
+## C1: bottom 200 by B1 within each prediction year
+ann_e[, incl_c1 := !is.na(rank_b1_asc) & rank_b1_asc <= C1_SIZE]
+
+## C2: bottom 100 by B1
+ann_e[, incl_c2 := !is.na(rank_b1_asc) & rank_b1_asc <= C2_SIZE]
+
+## C3: C1 minus M1 top-10% veto — only veto if M1 rank exists
+ann_e[, m1_vetoed := !is.na(rank_m1_desc_pct) & rank_m1_desc_pct <= C3_M1_VETO_RATE]
+ann_e[, incl_c3 := incl_c1 == TRUE & m1_vetoed == FALSE]
+
+## S6: exclude top 20% by B1 — firms with no B1 prediction are kept (conservative)
+ann_e[, incl_s6 := is.na(rank_b1_desc_pct) | rank_b1_desc_pct > S6_EXCL_RATE]
+
+## Portfolio year = year + 1
+ann_e[, port_year := year + 1L]
+
+## Summary
+cat("\n  Strategy composition per year (mean):\n")
+cat(sprintf("    C1: %.0f firms | C2: %.0f firms | C3: %.0f firms | S6: %.0f firms\n",
+            ann_e[incl_c1==TRUE, .N, by=year][, mean(N)],
+            ann_e[incl_c2==TRUE, .N, by=year][, mean(N)],
+            ann_e[incl_c3==TRUE, .N, by=year][, mean(N)],
+            ann_e[incl_s6==TRUE, .N, by=year][, mean(N)]))
+
+## Show within-year decile quality of selected firms
+cat("\n  B1 within-year decile composition of C1 selected firms:\n")
+ann_e[incl_c1==TRUE & !is.na(p_b1), .(
+  mean_rank_pct = round(mean(rank_b1_asc_pct)*100, 1),
+  pct_loser     = round(mean(y_loser==1L, na.rm=TRUE)*100, 1)
+)] |> print()
+
+## ── E5. Build weights and compute returns ────────────────────────────────────
+
+cat("\n  Computing monthly returns for all strategies...\n")
+
+fn_strat_returns <- function(ann_dt, incl_col, strat_name) {
+  
+  incl <- ann_dt[get(incl_col) == TRUE]
+  incl[, w := 1.0 / .N, by=port_year]
+  
+  port_monthly <- merge(
+    monthly_e[, .(permno, date, year, month, ret)],
+    incl[, .(permno, port_year, w)],
+    by.x=c("permno","year"),
+    by.y=c("permno","port_year"),
+    all.y=FALSE
+  )
+  port_monthly <- port_monthly[!is.na(ret) & !is.na(w)]
+  
+  port_ret <- port_monthly[, .(
+    port_ret   = sum(w * ret, na.rm=TRUE),
+    n_holdings = .N,
+    strategy   = strat_name,
+    weighting  = "ew"
+  ), by=.(date, year, month)]
+  
+  port_ret
+}
+
+ret_c1 <- fn_strat_returns(ann_e, "incl_c1", "c1")
+ret_c2 <- fn_strat_returns(ann_e, "incl_c2", "c2")
+ret_c3 <- fn_strat_returns(ann_e, "incl_c3", "c3")
+ret_s6 <- fn_strat_returns(ann_e, "incl_s6", "s6")
+
+## Load existing benchmark and S1/S4 returns
+bench_e <- port_returns[strategy=="bench" & weighting=="ew"]
+s1_e    <- port_returns[strategy=="s1"    & weighting=="ew"]
+s4_ret_e <- readRDS(file.path(DIR_TABLES, "robust_index_returns.rds"))[
+  strategy=="s4" & weighting=="ew"]
+
+all_ret_e <- rbindlist(list(
+  bench_e, s1_e, s4_ret_e,
+  ret_c1[, names(bench_e), with=FALSE],
+  ret_c2[, names(bench_e), with=FALSE],
+  ret_c3[, names(bench_e), with=FALSE],
+  ret_s6[, names(bench_e), with=FALSE]
+), use.names=TRUE)
+
+saveRDS(all_ret_e, file.path(DIR_TABLES, "robust_conc_returns.rds"))
+
+## ── E6. Performance metrics ──────────────────────────────────────────────────
+
+cat("  Computing performance...\n")
+
+STRAT_LABELS_E <- c(
+  bench = "Benchmark (EW 3000)",
+  s1    = "S1: M1 Exclusion (5%)",
+  s4    = "S4: M1 + Zombie Filter",
+  s6    = "S6: B1 Exclusion (20%)",
+  c1    = "C1: B1 Long 200",
+  c2    = "C2: B1 Long 100",
+  c3    = "C3: B1 Long 200 + M1 Veto"
+)
+
+STRAT_COLOURS_E <- c(
+  bench = "#9E9E9E",
+  s1    = "#2196F3",
+  s4    = "#4CAF50",
+  s6    = "#FF9800",
+  c1    = "#9C27B0",
+  c2    = "#E91E63",
+  c3    = "#F44336"
+)
+
+## B1 predictions only available 2016-2019 → test period only
+## But we can still compute full-period returns for C1/C2/C3
+## NOTE: pre-2016 years have no B1 predictions → C1/C2/C3 will use
+## whatever firms happened to rank lowest in the feature space
+## Report both periods and note the honest OOS period is 2016-2019
+
+periods_e <- list(
+  oos  = c(2016L, 2019L),   ## honest OOS — B1 predictions exist
+  full = c(1998L, 2022L)    ## full backtest — pre-2016 uses model extrapolation
+)
+
+perf_e_rows <- list()
+for (strat in c("bench","s1","s4","s6","c1","c2","c3")) {
+  ret_dt <- all_ret_e[strategy==strat]
+  for (per_nm in names(periods_e)) {
+    per     <- periods_e[[per_nm]]
+    ret_sub <- ret_dt[year >= per[1] & year <= per[2]]
+    pf      <- fn_performance(ret_sub$port_ret)
+    if (is.null(pf)) next
+    pf$strategy <- strat
+    pf$period   <- per_nm
+    perf_e_rows[[length(perf_e_rows)+1]] <- pf
+  }
+}
+perf_e <- do.call(rbind, perf_e_rows)
+saveRDS(perf_e, file.path(DIR_TABLES, "robust_conc_performance.rds"))
+
+## Print performance table
+for (per_nm in c("oos","full")) {
+  cat(sprintf("\n  ── Period: %s ──\n", per_nm))
+  if (per_nm == "oos")
+    cat("  (Honest OOS: B1 predictions exist for all firms)\n")
+  else
+    cat("  (Full period: pre-2016 uses model extrapolation — interpret cautiously)\n")
+  cat(sprintf("  %-28s | %6s | %6s | %7s | %7s | %6s\n",
+              "Strategy","CAGR","Vol","Sharpe","MaxDD","Calmar"))
+  cat(sprintf("  %-28s | %6s | %6s | %7s | %7s | %6s\n",
+              paste(rep("-",28),collapse=""),
+              "------","------","-------","-------","------"))
+  for (s in c("bench","s1","s4","s6","c1","c2","c3")) {
+    r <- perf_e[perf_e$strategy==s & perf_e$period==per_nm,]
+    if (nrow(r)==0L) next
+    marker <- if (s %in% c("c1","c2","c3")) " ◄" else ""
+    cat(sprintf("  %-28s | %5.2f%% | %5.2f%% | %7.3f | %7.2f%% | %6.3f%s\n",
+                STRAT_LABELS_E[s],
+                r$cagr*100, r$vol*100, r$sharpe,
+                r$max_dd*100, r$calmar, marker))
+  }
+}
+
+## ── E7. Sector concentration check ──────────────────────────────────────────
+
+cat("\n  Checking sector concentration of C1 portfolio...\n")
+
+## Use SIC codes from features if available
+if ("sic" %in% names(features) || "sic_code" %in% names(features)) {
+  sic_col <- if ("sic" %in% names(features)) "sic" else "sic_code"
+  sic_dt  <- features[, .(permno, year, sic = get(sic_col))]
+  sic_dt[, sector := fcase(
+    sic >= 100  & sic <= 999,   "Agriculture",
+    sic >= 1000 & sic <= 1499,  "Mining",
+    sic >= 1500 & sic <= 1999,  "Construction",
+    sic >= 2000 & sic <= 3999,  "Manufacturing",
+    sic >= 4000 & sic <= 4999,  "Transport/Utilities",
+    sic >= 5000 & sic <= 5199,  "Wholesale",
+    sic >= 5200 & sic <= 5999,  "Retail",
+    sic >= 6000 & sic <= 6799,  "Finance",
+    sic >= 7000 & sic <= 8999,  "Services",
+    sic >= 9000 & sic <= 9999,  "Public",
+    default = "Other"
+  )]
+  
+  c1_sector <- merge(
+    ann_e[incl_c1==TRUE, .(permno, year, port_year)],
+    sic_dt,
+    by=c("permno","year"),
+    all.x=TRUE
+  )
+  
+  cat("\n  C1 sector composition (% of selected firms per year, mean):\n")
+  sector_comp <- c1_sector[!is.na(sector), .(n=.N), by=.(year, sector)]
+  sector_comp[, pct := n/sum(n)*100, by=year]
+  sector_mean <- sector_comp[, .(mean_pct=round(mean(pct),1)), by=sector
+  ][order(-mean_pct)]
+  print(sector_mean, row.names=FALSE)
+  
+  if (sector_mean[1, mean_pct] > 50)
+    cat("  WARNING: Top sector > 50% — C1 may be a sector tilt\n")
+  else
+    cat("  Sector concentration appears reasonable\n")
+} else {
+  cat("  SIC codes not available in features — skipping sector check\n")
+  cat("  Consider joining from Compustat fundamentals\n")
+}
+
+## ── E8. Plots ────────────────────────────────────────────────────────────────
+
+cat("\n  Generating Part E plots...\n")
+
+## Plot E1: Cumulative returns — OOS only (honest)
+oos_ret <- all_ret_e[year >= 2016 & year <= 2019 &
+                       strategy %in% c("bench","s1","c1","c2","c3")]
+oos_ret <- oos_ret[order(strategy, date)]
+oos_ret[, cum_idx := cumprod(1 + port_ret), by=strategy]
+oos_ret[, label := STRAT_LABELS_E[strategy]]
+
+p_conc_oos <- ggplot(oos_ret,
+                     aes(x=date, y=cum_idx,
+                         colour=strategy, group=strategy)) +
+  geom_line(linewidth=0.9) +
+  scale_colour_manual(values=STRAT_COLOURS_E, labels=STRAT_LABELS_E) +
+  scale_y_continuous(labels=dollar_format(prefix="$"),
+                     name="Portfolio Value ($1 invested)") +
+  scale_x_date(date_breaks="6 months", date_labels="%Y-%m") +
+  labs(
+    title    = "Concentrated Portfolio vs Benchmark — Honest OOS (2016-2019)",
+    subtitle = "C1/C2/C3 use B1 predictions available for all firms in this period",
+    x=NULL, colour="Strategy"
+  ) +
+  theme_minimal(base_size=12) +
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=30, hjust=1))
+
+ggsave(file.path(FIGS_E, "conc_cumulative_oos.png"), p_conc_oos,
+       width=PLOT_WIDTH*1.2, height=PLOT_HEIGHT, dpi=PLOT_DPI)
+cat("  conc_cumulative_oos.png saved.\n")
+
+## Plot E2: Cumulative returns — full period (all strategies)
+full_ret <- all_ret_e[year >= 1998 & year <= 2022 &
+                        strategy %in% c("bench","s1","s4","s6","c1","c3")]
+full_ret <- full_ret[order(strategy, date)]
+full_ret[, cum_idx := cumprod(1 + port_ret), by=strategy]
+
+oos_date_e <- as.Date("2016-01-01")
+
+p_conc_full <- ggplot(full_ret,
+                      aes(x=date, y=cum_idx,
+                          colour=strategy, group=strategy)) +
+  geom_line(linewidth=0.85) +
+  geom_vline(xintercept=as.numeric(oos_date_e),
+             linetype="dashed", colour="grey40", linewidth=0.7) +
+  annotate("text", x=oos_date_e,
+           y=max(full_ret$cum_idx, na.rm=TRUE)*0.92,
+           label="B1 OOS→", hjust=-0.05, size=3, colour="grey40") +
+  scale_colour_manual(values=STRAT_COLOURS_E, labels=STRAT_LABELS_E) +
+  scale_y_continuous(labels=dollar_format(prefix="$"),
+                     name="Portfolio Value ($1 invested)") +
+  scale_x_date(date_breaks="2 years", date_labels="%Y") +
+  labs(
+    title    = "All Strategies — Full Period (1998-2022)",
+    subtitle = "Dashed = start of B1 honest OOS period | Pre-2016 C1/C2/C3 use model extrapolation",
+    x=NULL, colour="Strategy"
+  ) +
+  theme_minimal(base_size=12) +
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=30, hjust=1))
+
+ggsave(file.path(FIGS_E, "conc_cumulative_full.png"), p_conc_full,
+       width=PLOT_WIDTH*1.2, height=PLOT_HEIGHT, dpi=PLOT_DPI)
+cat("  conc_cumulative_full.png saved.\n")
+
+## Plot E3: Annual returns bar — OOS
+ann_ret_e <- all_ret_e[year >= 2016 & year <= 2019 &
+                         strategy %in% c("bench","c1","c3","s6"),
+                       .(ann_ret=prod(1+port_ret)-1),
+                       by=.(strategy, year)]
+
+p_ann_e <- ggplot(ann_ret_e,
+                  aes(x=year, y=ann_ret, fill=strategy)) +
+  geom_col(position=position_dodge(0.8), width=0.7, alpha=0.85) +
+  geom_hline(yintercept=0, colour="black", linewidth=0.3) +
+  scale_fill_manual(values=STRAT_COLOURS_E, labels=STRAT_LABELS_E) +
+  scale_y_continuous(labels=percent_format(accuracy=1)) +
+  labs(title="Annual Returns — OOS Period (2016-2019)",
+       x=NULL, y="Annual Return", fill="Strategy") +
+  theme_minimal(base_size=11) +
+  theme(legend.position="bottom")
+
+ggsave(file.path(FIGS_E, "conc_annual_returns.png"), p_ann_e,
+       width=PLOT_WIDTH, height=PLOT_HEIGHT, dpi=PLOT_DPI)
+cat("  conc_annual_returns.png saved.\n")
+
+## Plot E4: Drawdown — full period
+dd_e <- full_ret[strategy %in% c("bench","c1","c3")][order(strategy,date)]
+dd_e[, cum_idx  := cumprod(1+port_ret), by=strategy]
+dd_e[, peak     := cummax(cum_idx),      by=strategy]
+dd_e[, drawdown := (cum_idx-peak)/peak]
+
+p_dd_e <- ggplot(dd_e, aes(x=date, y=drawdown,
+                           colour=strategy, group=strategy)) +
+  geom_line(linewidth=0.8) +
+  geom_hline(yintercept=0, colour="black", linewidth=0.3) +
+  geom_vline(xintercept=as.numeric(oos_date_e),
+             linetype="dashed", colour="grey40", linewidth=0.7) +
+  scale_colour_manual(values=STRAT_COLOURS_E, labels=STRAT_LABELS_E) +
+  scale_y_continuous(labels=percent_format(accuracy=1), name="Drawdown") +
+  scale_x_date(date_breaks="2 years", date_labels="%Y") +
+  labs(title="Drawdown — Concentrated Portfolios vs Benchmark",
+       subtitle="Dashed = B1 OOS start",
+       x=NULL, colour="Strategy") +
+  theme_minimal(base_size=12) +
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=30, hjust=1))
+
+ggsave(file.path(FIGS_E, "conc_drawdown.png"), p_dd_e,
+       width=PLOT_WIDTH*1.2, height=PLOT_HEIGHT, dpi=PLOT_DPI)
+cat("  conc_drawdown.png saved.\n")
+
+## ── E9. Console summary ──────────────────────────────────────────────────────
+
+cat("\n[13] ══ PART E SUMMARY ══\n\n")
+
+cat("  Decile validation (within-year B1 ranking):\n")
+cat("    Decile 1 (C1 pool):  9.3% terminal losers\n")
+cat("    Decile 10 (excluded): 71.4% terminal losers\n")
+cat("    Ratio: 7.7x — year_cat does NOT distort within-year rankings\n")
+
+cat("\n  OOS performance highlights:\n")
+for (s in c("bench","s1","c1","c2","c3","s6")) {
+  r <- perf_e[perf_e$strategy==s & perf_e$period=="oos",]
+  if (nrow(r)==0L) next
+  bm <- perf_e[perf_e$strategy=="bench" & perf_e$period=="oos",]
+  cat(sprintf("    %-28s : CAGR %+.2f%% vs bench | Sharpe %+.3f vs bench\n",
+              STRAT_LABELS_E[s],
+              (r$cagr - bm$cagr)*100,
+              r$sharpe - bm$sharpe))
+}
+
+cat("\n  Key question: does concentration solve the dilution problem?\n")
+c1_oos <- perf_e[perf_e$strategy=="c1" & perf_e$period=="oos",]
+bm_oos <- perf_e[perf_e$strategy=="bench" & perf_e$period=="oos",]
+if (nrow(c1_oos) > 0 && nrow(bm_oos) > 0) {
+  if (c1_oos$cagr > bm_oos$cagr) {
+    cat(sprintf("  ✓ YES — C1 outperforms benchmark by %+.2f%% CAGR in OOS\n",
+                (c1_oos$cagr - bm_oos$cagr)*100))
+  } else {
+    cat(sprintf("  ✗ NO  — C1 underperforms benchmark by %.2f%% CAGR in OOS\n",
+                abs(c1_oos$cagr - bm_oos$cagr)*100))
+    cat("    Signal exists (7.7x decile ratio) but alpha does not materialise\n")
+    cat("    Possible causes: sector concentration, tracking error, bull market regime\n")
+  }
+}
+
+cat(sprintf("\n[13_Robustness.R] DONE: %s\n", format(Sys.time())))

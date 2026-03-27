@@ -40,7 +40,6 @@
 #==============================================================================#
 
 source("config.R")
-source("config_figures_addon.R")   ## figure directory helpers
 
 suppressPackageStartupMessages({
   library(data.table)

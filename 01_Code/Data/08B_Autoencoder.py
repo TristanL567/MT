@@ -108,11 +108,17 @@ def get_valid_cols(df_tr, df_te, df_oo, cols):
 # 2. Paths
 # ==============================================================================
 
-DATA_ROOT    = Path(r"C:\Users\Tristan Leiter\Documents\MT")
+if os.name == "nt":
+    DATA_ROOT = Path(r"C:\Users\Tristan Leiter\Documents\MT")
+else:
+    DATA_ROOT = Path("/workspace/MT")   # standard Vast.ai working directory
+
 DIR_DATA     = DATA_ROOT / "02_Data"
 DIR_FEATURES = DIR_DATA  / "Features"
-DIR_FIGURES  = DATA_ROOT / "03_Output" / "Figures"
-DIR_MODELS   = DATA_ROOT / "03_Output" / "Models" / "VAE"
+DIR_LABELS   = DIR_DATA  / "Labels"
+DIR_OUTPUT   = DATA_ROOT / "03_Output"
+DIR_MODELS   = DIR_OUTPUT / "Models" / "AutoGluon"
+DIR_TABLES   = DIR_OUTPUT / "Tables"
 
 DIR_FIGURES.mkdir(parents=True, exist_ok=True)
 DIR_MODELS.mkdir(parents=True,  exist_ok=True)

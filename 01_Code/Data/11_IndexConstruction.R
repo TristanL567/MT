@@ -1,56 +1,51 @@
 #==============================================================================#
 #==== 11_Results.R ============================================================#
-#==== Crash-Filtered Index Construction and Backtest =========================#
+#==== Crash-Filtered Index Construction — All 12 Models =======================#
 #==============================================================================#
 #
 # PURPOSE:
-#   Construct and backtest four equity index strategies using M1 and M3
-#   AutoGluon predictions. Compare risk-adjusted returns against an
-#   unfiltered pseudo-Russell 3000 benchmark.
+#   Construct and backtest crash-filtered equity indices for all 12 AutoGluon
+#   models (M1-M4, B1-B4, S1-S4). Predicted probability scores rank-exclude
+#   firms from a pseudo-Russell 3000 universe at four FPR-equivalent rates.
+#   Outputs raw returns and weights consumed by 12_Index_Evaluation.R.
 #
-# STRATEGIES:
-#   Benchmark : Unfiltered pseudo-Russell 3000 (top N by mktcap, annual rebal)
-#   S1        : M1-filtered  — exclude firms with p_csi(M1) > THRESH_FPR5
-#   S2        : M3-filtered  — exclude firms with p_csi(M3) > THRESH_FPR5
-#   S3        : Combined     — exclude if M1 OR M3 flags (union)
+# INDEX DESIGN:
+#   Universe   : Top 3000 by December market cap, refreshed annually.
+#   Rebalancing: Quarterly (Mar/Jun/Sep/Dec).
+#                Signal frequency: ANNUAL (Compustat-based predictions).
+#                Universe membership: updates at December only.
+#                Design note: quarterly cadence captures delistings / new
+#                entrants; exclusion flags are stable within each year since
+#                the underlying annual predictions do not change intra-year.
+#                This is intentional and matches the data generation frequency.
+#   Weighting  : Equal-weight (EW) and market-cap-weight (CW).
+#   Exclusion  : Rank-based — top X% by predicted probability excluded.
+#                Four rates: 1%, 3%, 5%, 10% (FPR-equivalent thresholds).
+#                Firms with no prediction are never excluded (conservative).
+#   Labels     : Not required. Probabilities only — valid across all periods
+#                including OOS 2020-2024 where bucket/structural labels are
+#                right-censored.
 #
-# WEIGHTING:
-#   Both equal-weight (EW) and market-cap weight (CW) are computed.
-#
-# REBALANCING:
-#   Annual, at end of December each year.
-#   Predictions at year t drive the portfolio held Jan–Dec of year t+1.
+# STRATEGY MATRIX:
+#   1 benchmark + 12 models x 4 rates x 2 weightings = 97 strategies
 #
 # PERIODS:
-#   In-sample  : 1998–2015 (uses train-period predictions — less honest)
-#   Honest OOS : 2016–2024 (uses test + OOS predictions only)
-#   Results reported separately and combined.
-#
-# TRANSACTION COSTS:
-#   TRANSACTION_COST_BPS = 0  (one-way, per trade)
-#   Set > 0 to model realistic costs (e.g. 5 bps one-way = 10 bps round-trip)
+#   In-sample : 1998-2015   (CV fold predictions — less strict, documented)
+#   Test      : 2016-2019   (honest evaluation period)
+#   OOS       : 2020-2024   (live — no labels exist)
 #
 # INPUTS:
-#   - config.R
-#   - panel_raw.rds                              monthly price data (if ret exists)
-#   - DIR_TABLES/ag_fund/ag_preds_test.parquet   M1 test predictions
-#   - DIR_TABLES/ag_fund/ag_preds_oos.parquet    M1 OOS predictions
-#   - DIR_TABLES/ag_preds_test.parquet           M3 test predictions (root)
-#   - DIR_TABLES/ag_preds_oos.parquet            M3 OOS predictions (root)
-#   - DIR_TABLES/ag_fund/ag_cv_results.parquet   M1 train-period CV predictions
-#   - DIR_TABLES/eval_threshold.rds              calibrated thresholds
-#   - Optional: monthly_returns.rds              pre-joined CRSP monthly returns
+#   config.R
+#   PATH_PRICES_MONTHLY
+#   DIR_TABLES/ag_{MODEL}/ag_preds_test.parquet
+#   DIR_TABLES/ag_{MODEL}/ag_preds_oos.parquet
+#   DIR_TABLES/ag_{MODEL}/ag_cv_results.parquet     (optional, in-sample)
 #
 # OUTPUTS:
-#   - DIR_TABLES/index_weights.rds               annual weights per strategy
-#   - DIR_TABLES/index_returns.rds               monthly portfolio returns
-#   - DIR_TABLES/index_performance.rds           summary performance table
-#   - DIR_FIGURES/index_cumulative_ew.png        cumulative return (EW)
-#   - DIR_FIGURES/index_cumulative_cw.png        cumulative return (CW)
-#   - DIR_FIGURES/index_annual_returns.png       annual return bars
-#   - DIR_FIGURES/index_drawdown.png             drawdown chart
-#   - DIR_FIGURES/index_exclusion_count.png      firms excluded per year
-#   - DIR_FIGURES/index_csi_avoided.png          CSI events avoided vs cost
+#   DIR_TABLES/index_returns.rds
+#   DIR_TABLES/index_weights.rds
+#   DIR_TABLES/index_performance.rds
+#   DIR_TABLES/index_exclusion_summary.rds
 #
 #==============================================================================#
 
@@ -58,813 +53,333 @@ source("config.R")
 
 suppressPackageStartupMessages({
   library(data.table)
-  library(dplyr)
   library(ggplot2)
   library(arrow)
   library(scales)
-  library(tidyr)
   library(lubridate)
 })
 
 cat("\n[11_Results.R] START:", format(Sys.time()), "\n")
+FIGS <- fn_setup_figure_dirs()
+
+## ── Parameters ───────────────────────────────────────────────────────────────
+UNIVERSE_SIZE  <- 3000L
+MIN_MKTCAP_MM  <- 100
+RF_ANNUAL      <- 0.03
+REBAL_MONTHS   <- c(3L, 6L, 9L, 12L)
+UNIVERSE_MONTH <- 12L
+TC_BPS         <- 0L
+
+EXCL_RATES <- c("1pct"=0.01, "3pct"=0.03, "5pct"=0.05, "10pct"=0.10)
+
+INSAMPLE_START <- 1998L
+OOS_END        <- 2024L
 
 #==============================================================================#
-# 0. Parameters — adjust here
+# 1. Monthly prices
 #==============================================================================#
 
-## Universe
-UNIVERSE_SIZE        <- 3000L      # pseudo-Russell 3000 (top N by mktcap)
-MIN_MKTCAP_MM        <- 100        # minimum market cap $100M to enter universe
-
-## ── Exclusion mode ──────────────────────────────────────────────────────────
-## "rank"      : exclude the top EXCLUSION_RATE share by predicted score each year
-##               e.g. EXCLUSION_RATE = 0.05 → worst 5% of universe excluded
-##               Robust to probability miscalibration — recommended
-## "threshold" : exclude firms with p_csi > calibrated FPR threshold
-##               Uses eval_threshold.rds from 10_Evaluate.R
-##               Can produce wildly different exclusion rates across years
-EXCLUSION_MODE       <- "rank"     # "rank" | "threshold"
-
-## Rank-based parameters (used when EXCLUSION_MODE = "rank")
-EXCLUSION_RATE_M1    <- 0.05       # exclude top 5% by M1 score per year
-EXCLUSION_RATE_M3    <- 0.05       # exclude top 5% by M3 score per year
-
-## Threshold-based parameters (used when EXCLUSION_MODE = "threshold")
-## Read from eval_threshold.rds — override manually if needed:
-THRESH_M1_OVERRIDE   <- NULL       # e.g. 0.2967 — set NULL to use calibrated
-THRESH_M3_OVERRIDE   <- NULL       # e.g. 0.0145
-
-## Transaction costs (one-way, basis points)
-TRANSACTION_COST_BPS <- 0          # 0 = frictionless | 5 = realistic
-
-## Rebalancing
-REBAL_MONTH          <- 12L        # December rebalancing
-
-## Backtest periods
-INSAMPLE_START       <- 1998L
-INSAMPLE_END         <- 2015L
-OOS_START            <- 2016L
-OOS_END              <- 2022L      # 2023 excluded — right-censoring
-
-## Combined strategy
-COMBINED_LOGIC       <- "union"    # "union" = M1 OR M3 | "intersection" = M1 AND M3
-
-#==============================================================================#
-# 1. Load calibrated thresholds
-#==============================================================================#
-
-cat("[11] Loading calibrated thresholds...\n")
-
-thresh_path <- file.path(DIR_TABLES, "eval_threshold.rds")
-if (!file.exists(thresh_path))
-  stop("[11] eval_threshold.rds not found — run 10_Evaluate.R first.")
-
-eval_threshold <- readRDS(thresh_path)
-
-## Extract FPR=5% thresholds
-get_thresh <- function(model_label, override) {
-  if (!is.null(override)) return(override)
-  row <- eval_threshold[eval_threshold$model == model_label &
-                          eval_threshold$fpr_target == 0.05, ]
-  if (nrow(row) == 0L)
-    stop(sprintf("[11] No FPR=5%% threshold found for model: %s", model_label))
-  row$threshold
-}
-
-THRESH_M1 <- get_thresh("M1 AG Fund", THRESH_M1_OVERRIDE)
-THRESH_M3 <- get_thresh("M3 AG Raw",  THRESH_M3_OVERRIDE)
-
-cat(sprintf("  M1 threshold (FPR=5%%): %.4f\n", THRESH_M1))
-cat(sprintf("  M3 threshold (FPR=5%%): %.4f\n", THRESH_M3))
-
-#==============================================================================#
-# 2. Load predictions — M1 and M3
-#==============================================================================#
-
-cat("\n[11] Loading model predictions...\n")
-
-load_preds <- function(paths, model_name) {
-  parts <- lapply(paths, function(p) {
-    if (!file.exists(p)) {
-      cat(sprintf("  [%s] Not found: %s\n", model_name, p))
-      return(NULL)
-    }
-    as.data.table(arrow::read_parquet(p))
-  })
-  parts <- Filter(Negate(is.null), parts)
-  if (length(parts) == 0L) stop(sprintf("[11] No predictions found for %s", model_name))
-  dt <- rbindlist(parts)
-  setnames(dt, "p_csi", paste0("p_csi_", tolower(model_name)))
-  dt[, .(permno, year, y, p_csi = get(paste0("p_csi_", tolower(model_name))))]
-}
-
-## M1 — test + OOS (honest) and CV (in-sample)
-m1_honest <- load_preds(
-  c(file.path(DIR_TABLES, "ag_fund", "ag_preds_test.parquet"),
-    file.path(DIR_TABLES, "ag_fund", "ag_preds_oos.parquet")),
-  "M1"
-)
-m1_honest[, period := "honest"]
-
-## M1 in-sample CV predictions (if available)
-m1_cv_path <- file.path(DIR_TABLES, "ag_fund", "ag_cv_results.parquet")
-if (file.exists(m1_cv_path)) {
-  m1_cv <- as.data.table(arrow::read_parquet(m1_cv_path))
-  m1_cv <- m1_cv[, .(permno, year, y, p_csi = p_csi)]
-  m1_cv[, period := "insample"]
-} else {
-  cat("  [M1] CV predictions not found — in-sample period will use honest preds only\n")
-  m1_cv <- NULL
-}
-
-## M3 — test + OOS
-m3_honest <- load_preds(
-  c(file.path(DIR_TABLES, "ag_preds_test.parquet"),
-    file.path(DIR_TABLES, "ag_preds_oos.parquet")),
-  "M3"
-)
-m3_honest[, period := "honest"]
-
-## M3 in-sample CV predictions
-m3_cv_path <- file.path(DIR_TABLES, "ag_cv_results.parquet")
-if (file.exists(m3_cv_path)) {
-  m3_cv <- as.data.table(arrow::read_parquet(m3_cv_path))
-  m3_cv <- m3_cv[, .(permno, year, y, p_csi = p_csi)]
-  m3_cv[, period := "insample"]
-} else {
-  cat("  [M3] CV predictions not found — in-sample period will use honest preds only\n")
-  m3_cv <- NULL
-}
-
-## Combine all predictions
-m1_all <- rbindlist(list(m1_cv, m1_honest), use.names = TRUE)
-m3_all <- rbindlist(list(m3_cv, m3_honest), use.names = TRUE)
-
-setnames(m1_all, "p_csi", "p_m1")
-setnames(m3_all, "p_csi", "p_m3")
-
-## Join M1 and M3 predictions
-## y (true CSI label) carried from m1_all — identical in m3_all
-preds_all <- merge(
-  m1_all[, .(permno, year, y, p_m1, period_m1 = period)],
-  m3_all[, .(permno, year, p_m3, period_m3 = period)],
-  by = c("permno", "year"),
-  all = TRUE
-)
-
-cat(sprintf("  Predictions joined: %d rows | years %d–%d\n",
-            nrow(preds_all),
-            min(preds_all$year), max(preds_all$year)))
-
-#==============================================================================#
-# 3. Load monthly returns
-#==============================================================================#
-
-cat("\n[11] Loading monthly returns...\n")
-
-## Load directly from PATH_PRICES_MONTHLY (prices_monthly.rds)
-## Columns: permno, date, price, ret_adj, ret_excl_div,
-##          div_amount, mktcap, vol, shrout, dlstcd, dlret_applied
+cat("[11] Loading monthly prices...\n")
 monthly <- as.data.table(readRDS(PATH_PRICES_MONTHLY))
-
-## Standardise column names used throughout this script
-## ret_adj → ret  (total return including dividends)
-## mktcap  → mkvalt (market cap $000s: price * shrout)
 setnames(monthly, "ret_adj", "ret")
 setnames(monthly, "mktcap",  "mkvalt")
-
-## Add year and month
 monthly[, year  := year(date)]
 monthly[, month := month(date)]
-
-## Parse dates if needed
-if (!inherits(monthly$date, "Date"))
-  monthly[, date := as.Date(date)]
-
-## Cap returns at extreme values (data errors / delisting artifacts)
-monthly[, ret := pmin(pmax(ret, -0.99, na.rm=TRUE), 10, na.rm=TRUE)]
-
+if (!inherits(monthly$date,"Date")) monthly[, date := as.Date(date)]
+monthly[, ret := pmin(pmax(ret,-0.99,na.rm=TRUE),10,na.rm=TRUE)]
+cat(sprintf("  %d rows | %d permnos | %d-%d\n",
+            nrow(monthly),uniqueN(monthly$permno),
+            min(monthly$year),max(monthly$year)))
 
 #==============================================================================#
-# 4. Build annual universe — pseudo-Russell 3000
+# 2. Annual universe
 #==============================================================================#
 
-cat("\n[11] Building annual pseudo-Russell 3000 universe...\n")
+cat("[11] Building annual universe...\n")
+dec_mv <- monthly[month==UNIVERSE_MONTH & !is.na(mkvalt),
+                  .(mkvalt_dec=mkvalt[.N]), by=.(permno,year)]
+universe_ann <- dec_mv[mkvalt_dec >= MIN_MKTCAP_MM]
+universe_ann[, rank_mv := frank(-mkvalt_dec,ties.method="first"), by=year]
+universe_ann <- universe_ann[rank_mv <= UNIVERSE_SIZE]
+cat(sprintf("  %d firm-years | avg %.0f/yr | %d-%d\n",
+            nrow(universe_ann),
+            nrow(universe_ann)/uniqueN(universe_ann$year),
+            min(universe_ann$year),max(universe_ann$year)))
 
-## Use December market cap for each year to determine universe membership
-## Market cap in panel is at annual (fiscal year end) grain
-## Use monthly mkvalt if available, else fall back to annual panel
+#==============================================================================#
+# 3. Load all 12 model predictions
+#==============================================================================#
 
-if ("mkvalt" %in% names(monthly) && !all(is.na(monthly$mkvalt))) {
+cat("[11] Loading predictions...\n")
+SRC_PRI <- c(oos=1L,test=2L,boundary=3L,cv=4L)
+PREDS   <- list()
+
+for (key in MODEL_KEYS_ALL) {
+  tdir  <- file.path(DIR_TABLES, paste0("ag_",key))
+  fmap  <- c(cv      =file.path(tdir,"ag_cv_results.parquet"),
+             boundary=file.path(tdir,"ag_preds_train_boundary.parquet"),
+             test    =file.path(tdir,"ag_preds_test.parquet"),
+             oos     =file.path(tdir,"ag_preds_oos.parquet"))
   
-  ## Use December mktcap from monthly data
-  dec_mktcap <- monthly[month == REBAL_MONTH & !is.na(mkvalt),
-                        .(mkvalt_dec = mean(mkvalt, na.rm=TRUE)),
-                        by = .(permno, year)]
+  parts <- Filter(Negate(is.null), lapply(names(fmap), function(nm) {
+    if (!file.exists(fmap[[nm]])) return(NULL)
+    dt <- as.data.table(arrow::read_parquet(fmap[[nm]]))
+    dt[, src:=nm][, .(permno,year,p_csi,src)]
+  }))
+  if (length(parts)==0) { cat(sprintf("  [%s] skip\n",key)); next }
   
-} else {
-  
-  ## Fall back: load mkvalt from features or panel
-  cat("  mkvalt not in monthly — loading from panel_raw.rds...\n")
-  panel <- as.data.table(readRDS(PATH_PANEL_RAW))
-  
-  if ("mkvalt" %in% names(panel)) {
-    dec_mktcap <- panel[, .(mkvalt_dec = mean(mkvalt, na.rm=TRUE)),
-                        by = .(permno, year)]
-  } else if ("log_mkvalt" %in% names(panel)) {
-    dec_mktcap <- panel[, .(mkvalt_dec = mean(exp(log_mkvalt), na.rm=TRUE)),
-                        by = .(permno, year)]
-    cat("  Using exp(log_mkvalt) as mkvalt proxy\n")
-  } else {
-    stop("[11] Cannot find market cap — need mkvalt or log_mkvalt in panel_raw.rds")
-  }
+  comb <- rbindlist(parts)
+  comb[, src_rank := SRC_PRI[src]]
+  setorder(comb,permno,year,src_rank)
+  comb <- comb[!duplicated(comb[,.(permno,year)])]
+  PREDS[[key]] <- comb[,.(permno,year,p_csi)]
+  cat(sprintf("  [%-30s] %d rows | %d-%d\n",
+              MODEL_LABELS[[key]],nrow(PREDS[[key]]),
+              min(PREDS[[key]]$year),max(PREDS[[key]]$year)))
 }
+cat(sprintf("  Loaded: %d/%d models\n",length(PREDS),length(MODEL_KEYS_ALL)))
 
-## Build universe per year: top UNIVERSE_SIZE by mkvalt, min cap filter
-universe <- dec_mktcap[mkvalt_dec >= MIN_MKTCAP_MM]
-universe[, rank_mkvalt := frank(-mkvalt_dec, ties.method = "first"),
-         by = year]
-universe <- universe[rank_mkvalt <= UNIVERSE_SIZE]
-universe[, in_universe := TRUE]
-
-cat(sprintf("  Universe built: %d firm-years | avg %.0f firms/year\n",
-            nrow(universe),
-            nrow(universe) / uniqueN(universe$year)))
+preds_stack <- rbindlist(lapply(names(PREDS), function(k)
+  PREDS[[k]][,model_key:=k]), use.names=TRUE)
 
 #==============================================================================#
-# 5. Apply exclusion rules — build annual weights
+# 4. Build quarterly weights
 #==============================================================================#
 
-cat("\n[11] Applying exclusion rules and building weights...\n")
+cat("\n[11] Building quarterly weights...\n")
 
-## Join universe with predictions
-## Prediction at year t → portfolio held in year t+1
-## So prediction year maps to PORTFOLIO year = pred_year + 1
+q_dates <- monthly[month %in% REBAL_MONTHS,
+                   .(qdate=max(date)), by=.(year,month)]
+setorder(q_dates,qdate)
+q_dates <- q_dates[year>=INSAMPLE_START & year<=OOS_END]
+N_Q     <- nrow(q_dates)
 
-ann <- merge(universe[, .(permno, year, mkvalt_dec, rank_mkvalt)],
-             preds_all[, .(permno, year, p_m1, p_m3, period_m1, period_m3)],
-             by = c("permno", "year"),
-             all.x = TRUE)
+w_list <- list()
 
-## ── Exclusion flags ────────────────────────────────────────────────────────
-
-if (EXCLUSION_MODE == "rank") {
+for (i in seq_len(N_Q)) {
+  q_yr  <- q_dates$year[i]
+  q_mo  <- q_dates$month[i]
+  qdate <- q_dates$qdate[i]
   
-  ## Rank-based: exclude top X% by predicted score within each year
-  ## Firms with no prediction are never flagged (NA score → rank to bottom)
-  ## frank() assigns rank 1 = lowest score, so highest score = highest rank
-  cat(sprintf("  Exclusion mode: RANK | M1 top %.0f%% | M3 top %.0f%%\n",
-              EXCLUSION_RATE_M1*100, EXCLUSION_RATE_M3*100))
+  uni_q <- universe_ann[year==q_yr, .(permno,mkvalt_dec)]
+  if (nrow(uni_q)==0) next
+  n_u   <- nrow(uni_q)
   
-  ann[, flag_m1 := {
-    n_with_pred <- sum(!is.na(p_m1))
-    if (n_with_pred == 0L) rep(FALSE, .N)
-    else {
-      cutoff <- ceiling(n_with_pred * EXCLUSION_RATE_M1)
-      r <- frank(-p_m1, ties.method="first", na.last="keep")
-      !is.na(r) & r <= cutoff
+  ## Benchmark
+  for (wt in c("ew","cw")) {
+    w_list[[paste0("bench_",wt,"_",i)]] <- data.table(
+      permno=uni_q$permno, mkvalt_dec=uni_q$mkvalt_dec,
+      qdate=qdate, q_year=q_yr, q_month=q_mo,
+      model_key="bench", excl_rate="none", weighting=wt,
+      w=if(wt=="ew") rep(1/n_u,n_u)
+      else uni_q$mkvalt_dec/sum(uni_q$mkvalt_dec))
+  }
+  
+  ## Overlay strategies
+  preds_yr <- preds_stack[year==q_yr-1L]
+  
+  for (key in names(PREDS)) {
+    p_k <- preds_yr[model_key==key, .(permno,p_csi)]
+    if (nrow(p_k)==0) next
+    u_p <- merge(uni_q, p_k, by="permno", all.x=TRUE)
+    n_p <- sum(!is.na(u_p$p_csi))
+    if (n_p==0) next
+    u_p[, rd := frank(-p_csi,ties.method="first",na.last="keep")]
+    
+    for (rn in names(EXCL_RATES)) {
+      co   <- ceiling(n_p * EXCL_RATES[[rn]])
+      incl <- u_p[is.na(rd)|rd>co]
+      if (nrow(incl)==0) next
+      sm   <- sum(incl$mkvalt_dec,na.rm=TRUE)
+      for (wt in c("ew","cw")) {
+        w_list[[paste0(key,"_",rn,"_",wt,"_",i)]] <- data.table(
+          permno=incl$permno, mkvalt_dec=incl$mkvalt_dec,
+          qdate=qdate, q_year=q_yr, q_month=q_mo,
+          model_key=key, excl_rate=rn, weighting=wt,
+          w=if(wt=="ew") rep(1/nrow(incl),nrow(incl))
+          else incl$mkvalt_dec/sm)
+      }
     }
-  }, by = year]
-  
-  ann[, flag_m3 := {
-    n_with_pred <- sum(!is.na(p_m3))
-    if (n_with_pred == 0L) rep(FALSE, .N)
-    else {
-      cutoff <- ceiling(n_with_pred * EXCLUSION_RATE_M3)
-      r <- frank(-p_m3, ties.method="first", na.last="keep")
-      !is.na(r) & r <= cutoff
-    }
-  }, by = year]
-  
-} else {
-  
-  ## Threshold-based: exclude firms with p_csi > calibrated threshold
-  ## Note: may produce actual FPR far from intended if score distribution
-  ## differs between the calibration set and the universe
-  cat(sprintf("  Exclusion mode: THRESHOLD | M1 θ=%.4f | M3 θ=%.4f\n",
-              THRESH_M1, THRESH_M3))
-  
-  ann[, flag_m1 := (!is.na(p_m1) & p_m1 > THRESH_M1)]
-  ann[, flag_m3 := (!is.na(p_m3) & p_m3 > THRESH_M3)]
-}
-
-ann[, flag_s1 := flag_m1]
-ann[, flag_s2 := flag_m3]
-ann[, flag_s3 := if (COMBINED_LOGIC == "union")
-  flag_m1 | flag_m3
-  else
-    flag_m1 & flag_m3]
-
-## Portfolio year = year + 1 (prediction drives next year's holdings)
-ann[, port_year := year + 1L]
-
-## For each strategy, a firm is INCLUDED if not flagged AND prediction exists
-## Firms with no prediction are included (conservative: don't exclude unknowns)
-ann[, incl_bench := TRUE]
-ann[, incl_s1    := !flag_s1]
-ann[, incl_s2    := !flag_s2]
-ann[, incl_s3    := !flag_s3]
-
-## Compute weights per strategy per port_year
-fn_weights <- function(dt, incl_col, weight_type) {
-  dt_incl <- dt[get(incl_col) == TRUE]
-  if (weight_type == "ew") {
-    dt_incl[, w := 1.0 / .N, by = port_year]
-  } else {
-    dt_incl[, w := mkvalt_dec / sum(mkvalt_dec, na.rm=TRUE), by = port_year]
   }
-  dt_incl[, .(permno, port_year, mkvalt_dec, w,
-              flag_m1, flag_m3, p_m1, p_m3)]
+  if (i%%20==0||i==N_Q) cat(sprintf("  %d/%d\n",i,N_Q))
 }
 
-strategies <- c("bench", "s1", "s2", "s3")
-weight_types <- c("ew", "cw")
+weights_all <- rbindlist(w_list, use.names=TRUE)
+setorder(weights_all, model_key,excl_rate,weighting,qdate,permno)
+saveRDS(weights_all, file.path(DIR_TABLES,"index_weights.rds"))
+cat(sprintf("  Weights: %d rows saved\n",nrow(weights_all)))
 
-weights_list <- list()
-for (strat in strategies) {
-  for (wt in weight_types) {
-    key <- paste0(strat, "_", wt)
-    weights_list[[key]] <- fn_weights(ann, paste0("incl_", strat), wt)
-    weights_list[[key]][, strategy := strat]
-    weights_list[[key]][, weighting := wt]
-  }
+#==============================================================================#
+# 5. Monthly portfolio returns
+#==============================================================================#
+
+cat("\n[11] Computing monthly returns...\n")
+strats <- unique(weights_all[,.(model_key,excl_rate,weighting)])
+N_S    <- nrow(strats)
+ret_list <- vector("list",N_S)
+
+for (i in seq_len(N_S)) {
+  sk  <- strats[i]
+  w_s <- weights_all[model_key==sk$model_key &
+                       excl_rate==sk$excl_rate &
+                       weighting==sk$weighting,
+                     .(permno,qdate,w)]
+  rdates <- sort(unique(w_s$qdate))
+  rel_p  <- unique(w_s$permno)
+  m_sub  <- monthly[permno %in% rel_p, .(permno,date,year,month,ret)]
+  m_sub[, aqd := rdates[findInterval(date,rdates,left.open=FALSE)]]
+  m_sub  <- m_sub[!is.na(aqd)]
+  ## rename for merge
+  setnames(w_s,"qdate","aqd")
+  m_s    <- merge(m_sub, w_s, by=c("permno","aqd"), all.x=FALSE)
+  m_s    <- m_s[!is.na(ret)&!is.na(w)]
+  if (TC_BPS>0) m_s[month %in% REBAL_MONTHS, ret:=ret-TC_BPS/10000]
+  
+  ret_list[[i]] <- m_s[,.(
+    port_ret   = sum(w*ret,na.rm=TRUE),
+    n_holdings = uniqueN(permno),
+    model_key  = sk$model_key,
+    excl_rate  = sk$excl_rate,
+    weighting  = sk$weighting
+  ), by=.(date,year,month)]
+  
+  if (i%%50==0||i==N_S) cat(sprintf("  %d/%d strategies\n",i,N_S))
 }
 
-weights_all <- rbindlist(weights_list)
-
-## Summary: firms per year per strategy
-excl_summary <- ann[, .(
-  n_universe = .N,
-  n_pred_m1  = sum(!is.na(p_m1)),
-  n_pred_m3  = sum(!is.na(p_m3)),
-  n_flag_m1  = sum(flag_m1, na.rm=TRUE),
-  n_flag_m3  = sum(flag_m3, na.rm=TRUE),
-  n_flag_s3  = sum(flag_s3, na.rm=TRUE),
-  n_incl_bench = sum(incl_bench),
-  n_incl_s1    = sum(incl_s1),
-  n_incl_s2    = sum(incl_s2),
-  n_incl_s3    = sum(incl_s3)
-), by = year][order(year)]
-
-cat("\n  Exclusion summary (first 10 years shown):\n")
-print(head(excl_summary, 10L), row.names = FALSE)
-
-saveRDS(weights_all,   file.path(DIR_TABLES, "index_weights.rds"))
-saveRDS(excl_summary,  file.path(DIR_TABLES, "index_exclusion_summary.rds"))
+port_returns <- rbindlist(ret_list)
+setorder(port_returns,model_key,excl_rate,weighting,date)
+saveRDS(port_returns, file.path(DIR_TABLES,"index_returns.rds"))
+cat(sprintf("  Returns: %d rows\n",nrow(port_returns)))
 
 #==============================================================================#
-# 6. Compute monthly portfolio returns
+# 6. Performance table
 #==============================================================================#
 
-cat("\n[11] Computing monthly portfolio returns...\n")
+cat("\n[11] Performance metrics...\n")
 
-## Join weights to monthly returns
-## weights port_year = year the portfolio is HELD
-## monthly year = calendar year of the return observation
-## → join on permno + (monthly$year == weights$port_year)
-
-returns_list <- list()
-
-for (strat in strategies) {
-  for (wt in weight_types) {
-    key <- paste0(strat, "_", wt)
-    w   <- weights_list[[key]]
-    
-    ## Join monthly returns to weights
-    port_monthly <- merge(
-      monthly[, .(permno, date, year, month, ret)],
-      w[, .(permno, port_year, w)],
-      by.x = c("permno", "year"),
-      by.y = c("permno", "port_year"),
-      all.y = FALSE
-    )
-    port_monthly <- port_monthly[!is.na(ret) & !is.na(w)]
-    
-    ## Apply transaction costs at rebalancing month
-    ## Cost = TRANSACTION_COST_BPS / 10000 applied to each position change
-    ## Simplified: deduct flat cost from December return for non-zero cost
-    if (TRANSACTION_COST_BPS > 0) {
-      port_monthly[month == REBAL_MONTH,
-                   ret := ret - TRANSACTION_COST_BPS / 10000]
-    }
-    
-    ## Weighted portfolio return per month
-    port_ret <- port_monthly[, .(
-      port_ret   = sum(w * ret, na.rm=TRUE),
-      n_holdings = .N,
-      strategy   = strat,
-      weighting  = wt
-    ), by = .(date, year, month)]
-    
-    returns_list[[key]] <- port_ret
-  }
+fn_perf <- function(rv, rf=RF_ANNUAL) {
+  rv <- rv[is.finite(rv)]
+  if (length(rv)<12) return(NULL)
+  ny  <- length(rv)/12; rfm <- (1+rf)^(1/12)-1
+  cum <- prod(1+rv)-1;  cagr <- (1+cum)^(1/ny)-1
+  vol <- sd(rv)*sqrt(12); exc <- rv-rfm
+  sh  <- mean(exc)/sd(exc)*sqrt(12)
+  ddr <- exc[rv<rfm]
+  srt <- if(length(ddr)>1) mean(exc)/(sd(ddr)*sqrt(12)) else NA_real_
+  ci  <- cumprod(1+rv); pk <- cummax(ci)
+  mdd <- min((ci-pk)/pk)
+  cal <- if(mdd<0) cagr/abs(mdd) else NA_real_
+  data.frame(n_months=length(rv),cum_ret=round(cum,4),cagr=round(cagr,4),
+             vol=round(vol,4),sharpe=round(sh,4),sortino=round(srt,4),
+             max_dd=round(mdd,4),calmar=round(cal,4),
+             win_rate=round(mean(rv>0),4))
 }
 
-port_returns <- rbindlist(returns_list)
-port_returns <- port_returns[order(strategy, weighting, date)]
+PERIODS_P <- list(
+  insample=c(INSAMPLE_START,year(TRAIN_END)),
+  test    =c(year(TEST_START),year(TEST_END)),
+  oos     =c(year(OOS_START),OOS_END),
+  full    =c(INSAMPLE_START,OOS_END)
+)
 
-saveRDS(port_returns, file.path(DIR_TABLES, "index_returns.rds"))
-cat(sprintf("  Monthly returns computed: %d strategy-months\n", nrow(port_returns)))
-
-#==============================================================================#
-# 7. Performance metrics
-#==============================================================================#
-
-cat("\n[11] Computing performance metrics...\n")
-
-fn_performance <- function(ret_vec, dates, rf_annual = 0.03) {
-  
-  ret_vec <- ret_vec[!is.na(ret_vec)]
-  if (length(ret_vec) < 12L) return(NULL)
-  
-  n_months   <- length(ret_vec)
-  n_years    <- n_months / 12
-  rf_monthly <- (1 + rf_annual)^(1/12) - 1
-  
-  cum_ret    <- prod(1 + ret_vec) - 1
-  cagr       <- (1 + cum_ret)^(1/n_years) - 1
-  vol_ann    <- sd(ret_vec) * sqrt(12)
-  excess_ret <- ret_vec - rf_monthly
-  sharpe     <- mean(excess_ret) / sd(excess_ret) * sqrt(12)
-  
-  ## Sortino — downside deviation only
-  dd_ret     <- ret_vec[ret_vec < rf_monthly]
-  sortino    <- if (length(dd_ret) > 1)
-    mean(excess_ret) / (sd(dd_ret) * sqrt(12)) else NA_real_
-  
-  ## Maximum drawdown
-  cum_index  <- cumprod(1 + ret_vec)
-  peak       <- cummax(cum_index)
-  drawdowns  <- (cum_index - peak) / peak
-  max_dd     <- min(drawdowns)
-  
-  ## Calmar
-  calmar     <- if (max_dd != 0) cagr / abs(max_dd) else NA_real_
-  
-  ## Win rate
-  win_rate   <- mean(ret_vec > 0)
-  
-  data.frame(
-    n_months   = n_months,
-    cum_ret    = round(cum_ret,  4),
-    cagr       = round(cagr,     4),
-    vol_ann    = round(vol_ann,  4),
-    sharpe     = round(sharpe,   4),
-    sortino    = round(sortino,  4),
-    max_dd     = round(max_dd,   4),
-    calmar     = round(calmar,   4),
-    win_rate   = round(win_rate, 4)
-  )
-}
-
-## Compute for each strategy × weighting × period
 perf_rows <- list()
-
-periods <- list(
-  full     = c(INSAMPLE_START, OOS_END),
-  insample = c(INSAMPLE_START, INSAMPLE_END),
-  oos      = c(OOS_START, OOS_END)
-)
-
-for (strat in strategies) {
-  for (wt in weight_types) {
-    key <- paste0(strat, "_", wt)
-    ret_dt <- port_returns[strategy == strat & weighting == wt]
-    
-    for (per_name in names(periods)) {
-      per <- periods[[per_name]]
-      ret_sub <- ret_dt[year >= per[1] & year <= per[2]]
-      if (nrow(ret_sub) < 12L) next
-      
-      pf <- fn_performance(ret_sub$port_ret, ret_sub$date)
-      if (is.null(pf)) next
-      
-      pf$strategy  <- strat
-      pf$weighting <- wt
-      pf$period    <- per_name
-      perf_rows[[length(perf_rows)+1]] <- pf
-    }
+for (i in seq_len(N_S)) {
+  sk  <- strats[i]
+  rdt <- port_returns[model_key==sk$model_key &
+                        excl_rate==sk$excl_rate &
+                        weighting==sk$weighting]
+  for (pnm in names(PERIODS_P)) {
+    yr  <- PERIODS_P[[pnm]]
+    sub <- rdt[year>=yr[1]&year<=yr[2]]
+    pf  <- fn_perf(sub$port_ret); if(is.null(pf)) next
+    pf$model_key <- sk$model_key; pf$excl_rate <- sk$excl_rate
+    pf$weighting <- sk$weighting; pf$period     <- pnm
+    pf$track     <- MODEL_TRACK[[sk$model_key]] %||% "—"
+    pf$short     <- MODEL_SHORTS[[sk$model_key]] %||% sk$model_key
+    perf_rows[[length(perf_rows)+1]] <- pf
   }
 }
+`%||%` <- function(a,b) if(is.null(a)||length(a)==0) b else a
+perf_all <- rbindlist(perf_rows, fill=TRUE)
+saveRDS(perf_all, file.path(DIR_TABLES,"index_performance.rds"))
+cat("  index_performance.rds saved.\n")
 
-perf_table <- do.call(rbind, perf_rows)
-
-cat("\n  Performance table (OOS, equal-weight):\n\n")
-oos_ew <- perf_table[perf_table$weighting == "ew" &
-                       perf_table$period    == "oos", ]
-print(oos_ew[, c("strategy","weighting","period",
-                 "cagr","vol_ann","sharpe","max_dd","calmar")],
-      row.names = FALSE)
-
-saveRDS(perf_table, file.path(DIR_TABLES, "index_performance.rds"))
-
-#==============================================================================#
-# 8. CSI avoided — how many true CSI events did each strategy prevent?
-#==============================================================================#
-
-cat("\n[11] Computing CSI avoidance statistics...\n")
-
-## Join labels to exclusion flags
-## y = 1 means the firm actually became a CSI in the NEXT year
-## flag = 1 means the model flagged it for exclusion
-
-csi_audit <- merge(
-  ann[, .(permno, year, port_year,
-          flag_s1, flag_s2, flag_s3, incl_s1, incl_s2, incl_s3,
-          p_m1, p_m3, mkvalt_dec)],
-  ## y comes entirely from predictions (label shift: y at t = CSI in t+1)
-  preds_all[, .(permno, year, y)],
-  by = c("permno", "year"),
-  all.x = TRUE
-)
-
-## y at year t = did firm enter CSI in year t+1 (label shift already applied)
-csi_audit <- csi_audit[!is.na(y)]
-
-csi_stats <- list()
-for (strat in c("s1", "s2", "s3")) {
-  flag_col <- paste0("flag_", strat)
-  incl_col <- paste0("incl_", strat)
-  
-  dt <- csi_audit[, .(
-    n_total      = .N,
-    n_csi        = sum(y == 1L, na.rm=TRUE),
-    n_flagged    = sum(get(flag_col), na.rm=TRUE),
-    tp           = sum(get(flag_col) == TRUE  & y == 1L, na.rm=TRUE),  ## correctly excluded
-    fp           = sum(get(flag_col) == TRUE  & y == 0L, na.rm=TRUE),  ## wrongly excluded
-    fn           = sum(get(flag_col) == FALSE & y == 1L, na.rm=TRUE),  ## missed CSI
-    tn           = sum(get(flag_col) == FALSE & y == 0L, na.rm=TRUE)   ## correctly included
-  )]
-  
-  dt[, strategy   := strat]
-  dt[, recall     := round(tp / (tp + fn), 4)]    ## CSI events caught
-  dt[, precision  := round(tp / (tp + fp), 4)]    ## of exclusions, how many were real CSI
-  dt[, fpr        := round(fp / (fp + tn), 4)]    ## false exclusion rate
-  dt[, f1         := round(2*recall*precision / (recall+precision), 4)]
-  csi_stats[[strat]] <- dt
+## Console summary
+cat("\n  OOS (EW, 5%) summary:\n")
+oos5 <- perf_all[period=="oos"&excl_rate %in% c("none","5pct")&weighting=="ew"]
+setorder(oos5,track,short)
+br   <- oos5[model_key=="bench"]
+if(nrow(br)>0) cat(sprintf("  BENCH   : CAGR=%+.2f%% | Sharpe=%.3f | MaxDD=%.2f%%\n",
+                           br$cagr*100,br$sharpe,br$max_dd*100))
+for(j in seq_len(nrow(oos5[model_key!="bench"]))) {
+  r <- oos5[model_key!="bench"][j]
+  cat(sprintf("  %-8s: CAGR=%+.2f%% | Sharpe=%.3f | MaxDD=%.2f%%\n",
+              r$short,r$cagr*100,r$sharpe,r$max_dd*100))
 }
 
-csi_table <- rbindlist(csi_stats)
-cat("\n  CSI avoidance table (full period):\n\n")
-print(csi_table, row.names = FALSE)
-saveRDS(csi_table, file.path(DIR_TABLES, "index_csi_avoidance.rds"))
-
 #==============================================================================#
-# 9. Plots
+# 7. Exclusion diagnostics
 #==============================================================================#
 
-cat("\n[11] Generating plots...\n")
-
-## Strategy labels for display
-STRAT_LABELS <- c(
-  bench = "Benchmark (Unfiltered)",
-  s1    = "S1: M1 Ex-Ante Screen",
-  s2    = "S2: M3 Triage Filter",
-  s3    = "S3: M1 + M3 Combined"
-)
-
-STRAT_COLOURS <- c(
-  bench = "#9E9E9E",
-  s1    = "#2196F3",
-  s2    = "#F44336",
-  s3    = "#4CAF50"
-)
-
-##──────────────────────────────────────────────────────────────────────────────
-## 9A. Cumulative return — equal-weight
-##──────────────────────────────────────────────────────────────────────────────
-
-fn_cum_ret_plot <- function(wt_type, title_suffix) {
-  
-  ret_dt <- port_returns[weighting == wt_type]
-  ret_dt <- ret_dt[order(strategy, date)]
-  
-  ## Cumulative index (base = 1 at start)
-  ret_dt[, cum_idx := cumprod(1 + port_ret), by = .(strategy, weighting)]
-  
-  ## Honest OOS start date for annotation
-  oos_start_date <- as.Date(sprintf("%d-01-01", OOS_START))
-  
-  ret_dt[, strat_label := STRAT_LABELS[strategy]]
-  ret_dt[, strat_label := factor(strat_label, levels = STRAT_LABELS)]
-  
-  p <- ggplot(ret_dt, aes(x=date, y=cum_idx,
-                          colour=strategy, group=strategy)) +
-    geom_line(linewidth=0.9) +
-    geom_vline(xintercept=as.numeric(oos_start_date),
-               linetype="dashed", colour="grey40", linewidth=0.7) +
-    annotate("text", x=oos_start_date, y=max(ret_dt$cum_idx, na.rm=TRUE)*0.95,
-             label="OOS start\n(2016)", hjust=-0.1, size=3, colour="grey40") +
-    geom_vline(xintercept=as.numeric(as.Date(sprintf("%d-01-01", INSAMPLE_END+1))),
-               linetype="dotted", colour="grey60", linewidth=0.5) +
-    scale_colour_manual(values=STRAT_COLOURS, labels=STRAT_LABELS) +
-    scale_y_continuous(labels=scales::dollar_format(prefix="$"),
-                       name="Portfolio Value ($1 invested)") +
-    scale_x_date(date_breaks="2 years", date_labels="%Y") +
-    labs(
-      title    = paste0("Crash-Filtered Index — Cumulative Return (", title_suffix, ")"),
-      subtitle = paste0("Pseudo-Russell 3000 universe | Annual rebalancing | ",
-                        "Dashed = OOS start (2016)"),
-      x        = NULL,
-      colour   = "Strategy"
-    ) +
-    theme_minimal(base_size=12) +
-    theme(legend.position="bottom",
-          axis.text.x=element_text(angle=30, hjust=1))
-  
-  p
-}
-
-p_cum_ew <- fn_cum_ret_plot("ew", "Equal-Weight")
-ggsave(file.path(DIR_FIGURES, "index_cumulative_ew.png"), p_cum_ew,
-       width=PLOT_WIDTH*1.2, height=PLOT_HEIGHT, dpi=PLOT_DPI)
-cat("  index_cumulative_ew.png saved.\n")
-
-p_cum_cw <- fn_cum_ret_plot("cw", "Cap-Weight")
-ggsave(file.path(DIR_FIGURES, "index_cumulative_cw.png"), p_cum_cw,
-       width=PLOT_WIDTH*1.2, height=PLOT_HEIGHT, dpi=PLOT_DPI)
-cat("  index_cumulative_cw.png saved.\n")
-
-##──────────────────────────────────────────────────────────────────────────────
-## 9B. Annual returns bar chart — equal-weight
-##──────────────────────────────────────────────────────────────────────────────
-
-ann_ret <- port_returns[weighting == "ew",
-                        .(ann_ret = prod(1 + port_ret) - 1),
-                        by = .(strategy, year)]
-ann_ret[, strat_label := STRAT_LABELS[strategy]]
-
-p_ann <- ggplot(ann_ret,
-                aes(x=year, y=ann_ret, fill=strategy)) +
-  geom_col(position=position_dodge(width=0.8), width=0.7, alpha=0.85) +
-  geom_hline(yintercept=0, colour="black", linewidth=0.4) +
-  geom_vline(xintercept=OOS_START - 0.5,
-             linetype="dashed", colour="grey40", linewidth=0.7) +
-  annotate("text", x=OOS_START - 0.4, y=max(ann_ret$ann_ret, na.rm=TRUE)*0.9,
-           label="OOS→", hjust=0, size=3, colour="grey40") +
-  scale_fill_manual(values=STRAT_COLOURS, labels=STRAT_LABELS) +
-  scale_y_continuous(labels=scales::percent_format(accuracy=1)) +
-  labs(title="Annual Returns — Equal-Weight",
-       x=NULL, y="Annual Return", fill="Strategy") +
-  theme_minimal(base_size=11) +
-  theme(legend.position="bottom",
-        axis.text.x=element_text(angle=30, hjust=1, size=8))
-
-ggsave(file.path(DIR_FIGURES, "index_annual_returns.png"), p_ann,
-       width=PLOT_WIDTH*1.4, height=PLOT_HEIGHT, dpi=PLOT_DPI)
-cat("  index_annual_returns.png saved.\n")
-
-##──────────────────────────────────────────────────────────────────────────────
-## 9C. Drawdown chart — equal-weight
-##──────────────────────────────────────────────────────────────────────────────
-
-dd_dt <- port_returns[weighting == "ew"][order(strategy, date)]
-dd_dt[, cum_idx  := cumprod(1 + port_ret), by=strategy]
-dd_dt[, peak     := cummax(cum_idx),        by=strategy]
-dd_dt[, drawdown := (cum_idx - peak) / peak]
-dd_dt[, strat_label := STRAT_LABELS[strategy]]
-
-p_dd <- ggplot(dd_dt, aes(x=date, y=drawdown,
-                          colour=strategy, group=strategy)) +
-  geom_line(linewidth=0.8) +
-  geom_hline(yintercept=0, colour="black", linewidth=0.3) +
-  geom_vline(xintercept=as.numeric(as.Date(sprintf("%d-01-01", OOS_START))),
-             linetype="dashed", colour="grey40", linewidth=0.7) +
-  scale_colour_manual(values=STRAT_COLOURS, labels=STRAT_LABELS) +
-  scale_y_continuous(labels=scales::percent_format(accuracy=1),
-                     name="Drawdown") +
-  scale_x_date(date_breaks="2 years", date_labels="%Y") +
-  labs(title="Drawdown — Equal-Weight",
-       subtitle="Dashed = OOS start (2016)",
-       x=NULL, colour="Strategy") +
-  theme_minimal(base_size=12) +
-  theme(legend.position="bottom",
-        axis.text.x=element_text(angle=30, hjust=1))
-
-ggsave(file.path(DIR_FIGURES, "index_drawdown.png"), p_dd,
-       width=PLOT_WIDTH*1.2, height=PLOT_HEIGHT, dpi=PLOT_DPI)
-cat("  index_drawdown.png saved.\n")
-
-##──────────────────────────────────────────────────────────────────────────────
-## 9D. Exclusion count per year
-##──────────────────────────────────────────────────────────────────────────────
-
-excl_long <- excl_summary |>
-  select(year, n_flag_m1, n_flag_m3, n_flag_s3) |>
-  pivot_longer(cols=c(n_flag_m1, n_flag_m3, n_flag_s3),
-               names_to="strategy", values_to="n_excluded") |>
-  mutate(strategy = recode(strategy,
-                           n_flag_m1 = "s1",
-                           n_flag_m3 = "s2",
-                           n_flag_s3 = "s3"),
-         strat_label = STRAT_LABELS[strategy])
-
-p_excl <- ggplot(excl_long,
-                 aes(x=year, y=n_excluded, colour=strategy, group=strategy)) +
-  geom_line(linewidth=0.9) +
-  geom_point(size=2) +
-  geom_vline(xintercept=OOS_START - 0.5,
-             linetype="dashed", colour="grey40", linewidth=0.7) +
-  scale_colour_manual(values=STRAT_COLOURS, labels=STRAT_LABELS) +
-  scale_y_continuous(name="Firms excluded") +
-  labs(title="Annual Exclusion Count — Firms Flagged per Strategy",
-       subtitle=if (EXCLUSION_MODE == "rank")
-         paste0("Rank-based | M1 top ", EXCLUSION_RATE_M1*100, "% | M3 top ",
-                EXCLUSION_RATE_M3*100, "% per year")
-       else
-         paste0("Threshold-based | M1 θ=", round(THRESH_M1,3),
-                " | M3 θ=", round(THRESH_M3,3)),
-       x=NULL, colour="Strategy") +
-  theme_minimal(base_size=12) +
-  theme(legend.position="bottom")
-
-ggsave(file.path(DIR_FIGURES, "index_exclusion_count.png"), p_excl,
-       width=PLOT_WIDTH, height=PLOT_HEIGHT, dpi=PLOT_DPI)
-cat("  index_exclusion_count.png saved.\n")
-
-##──────────────────────────────────────────────────────────────────────────────
-## 9E. CSI avoided vs false positives — tradeoff chart
-##──────────────────────────────────────────────────────────────────────────────
-
-csi_plot_dt <- csi_table[, .(
-  strategy,
-  tp, fp,
-  recall    = recall,
-  precision = precision,
-  label     = STRAT_LABELS[strategy]
-)]
-
-p_csi <- ggplot(csi_plot_dt,
-                aes(x=fp, y=tp, colour=strategy, label=label)) +
-  geom_point(size=5, alpha=0.8) +
-  ggrepel::geom_label_repel(size=3, fill="white", show.legend=FALSE) +
-  scale_colour_manual(values=STRAT_COLOURS, labels=STRAT_LABELS) +
-  labs(title="CSI Events Avoided vs Winners Excluded",
-       subtitle="Each point = one strategy | x=false exclusions | y=CSI events avoided",
-       x="False Positives (Winners Excluded)",
-       y="True Positives (CSI Events Avoided)",
-       colour="Strategy") +
-  theme_minimal(base_size=12) +
-  theme(legend.position="bottom")
-
-## ggrepel optional — fall back if not installed
-p_csi_path <- file.path(DIR_FIGURES, "index_csi_avoided.png")
-tryCatch({
-  library(ggrepel)
-  ggsave(p_csi_path, p_csi,
-         width=PLOT_WIDTH, height=PLOT_HEIGHT, dpi=PLOT_DPI)
-  cat("  index_csi_avoided.png saved.\n")
-}, error = function(e) {
-  ## Without ggrepel — plain labels
-  p_csi2 <- p_csi +
-    geom_text(aes(label=strategy), hjust=-0.3, size=3)
-  ggsave(p_csi_path, p_csi2,
-         width=PLOT_WIDTH, height=PLOT_HEIGHT, dpi=PLOT_DPI)
-  cat("  index_csi_avoided.png saved (no ggrepel).\n")
-})
+excl_d <- weights_all[q_month==UNIVERSE_MONTH,
+                      .(n_included=.N), by=.(model_key,excl_rate,weighting,q_year)]
+uni_sz <- universe_ann[,.(n_universe=.N),by=year]
+excl_d <- merge(excl_d,uni_sz,by.x="q_year",by.y="year",all.x=TRUE)
+excl_d[, n_excluded:=n_universe-n_included]
+excl_d[, excl_pct  :=round(n_excluded/n_universe*100,2)]
+saveRDS(excl_d, file.path(DIR_TABLES,"index_exclusion_summary.rds"))
+cat("  index_exclusion_summary.rds saved.\n")
 
 #==============================================================================#
-# 10. Final summary console table
+# 8. Core plots
 #==============================================================================#
 
-cat("\n[11] ══════════════════════════════════════════════════════\n")
-cat("  FINAL PERFORMANCE TABLE — Equal-Weight\n")
-cat("  ══════════════════════════════════════════════════════\n\n")
+cat("\n[11] Core plots...\n")
 
-ew_full <- perf_table[perf_table$weighting == "ew" &
-                        perf_table$period == "full", ]
+## Benchmark cumulative
+bew <- port_returns[model_key=="bench"&weighting=="ew"][order(date)]
+bew[, cum_idx := cumprod(1+port_ret)]
+p_b <- ggplot(bew,aes(x=date,y=cum_idx)) +
+  geom_line(colour="#9E9E9E",linewidth=1) +
+  geom_vline(xintercept=as.numeric(as.Date("2016-01-01")),
+             linetype="dashed",colour="#1565C0") +
+  geom_vline(xintercept=as.numeric(as.Date("2020-01-01")),
+             linetype="dotted",colour="#E53935") +
+  scale_y_continuous(labels=dollar_format(prefix="$")) +
+  scale_x_date(date_breaks="2 years",date_labels="%Y") +
+  labs(title=sprintf("Benchmark — Pseudo-Russell %d (EW)",UNIVERSE_SIZE),
+       subtitle="Annual universe | Quarterly rebalancing | Annual signal",
+       x=NULL,y="Portfolio Value ($1)") +
+  theme_minimal(base_size=12)
+ggsave(file.path(FIGS$index_general,"benchmark_cumulative.png"),p_b,
+       width=PLOT_WIDTH*1.2,height=PLOT_HEIGHT,dpi=PLOT_DPI)
 
-cat(sprintf("  %-28s | %6s | %6s | %6s | %7s | %6s\n",
-            "Strategy", "CAGR", "Vol", "Sharpe", "MaxDD", "Calmar"))
-cat(sprintf("  %-28s | %6s | %6s | %6s | %7s | %6s\n",
-            "----------------------------",
-            "------","------","------","-------","------"))
+## M1 exclusion rate comparison
+RATE_COLS <- c(none="#9E9E9E","1pct"="#BBDEFB","3pct"="#1E88E5",
+               "5pct"="#0D47A1","10pct"="#E53935")
+RATE_LABS <- c(none="Benchmark","1pct"="Excl 1%","3pct"="Excl 3%",
+               "5pct"="Excl 5%","10pct"="Excl 10%")
 
-strat_order <- c("bench","s1","s2","s3")
-for (s in strat_order) {
-  r <- ew_full[ew_full$strategy == s, ]
-  if (nrow(r) == 0L) next
-  cat(sprintf("  %-28s | %6.2f%% | %6.2f%% | %6.3f | %7.2f%% | %6.3f\n",
-              STRAT_LABELS[s],
-              r$cagr*100, r$vol_ann*100, r$sharpe,
-              r$max_dd*100, r$calmar))
-}
-
-cat("\n[11] ══════════════════════════════════════════════════════\n")
-cat("  FINAL PERFORMANCE TABLE — Cap-Weight\n")
-cat("  ══════════════════════════════════════════════════════\n\n")
-
-cw_full <- perf_table[perf_table$weighting == "cw" &
-                        perf_table$period == "full", ]
-
-for (s in strat_order) {
-  r <- cw_full[cw_full$strategy == s, ]
-  if (nrow(r) == 0L) next
-  cat(sprintf("  %-28s | %6.2f%% | %6.2f%% | %6.3f | %7.2f%% | %6.3f\n",
-              STRAT_LABELS[s],
-              r$cagr*100, r$vol_ann*100, r$sharpe,
-              r$max_dd*100, r$calmar))
+if ("fund" %in% names(PREDS)) {
+  m1r <- rbindlist(list(
+    bew[,.(date,year,port_ret,model_key="bench",excl_rate="none")],
+    port_returns[model_key=="fund"&weighting=="ew",
+                 .(date,year,port_ret,model_key,excl_rate)]))
+  setorder(m1r,model_key,excl_rate,date)
+  m1r[, cum_idx:=cumprod(1+port_ret), by=.(model_key,excl_rate)]
+  p_m1 <- ggplot(m1r,aes(x=date,y=cum_idx,colour=excl_rate,group=excl_rate))+
+    geom_line(linewidth=0.85)+
+    geom_vline(xintercept=as.numeric(as.Date("2016-01-01")),
+               linetype="dashed",colour="grey40")+
+    scale_colour_manual(values=RATE_COLS,labels=RATE_LABS)+
+    scale_y_continuous(labels=dollar_format(prefix="$"))+
+    scale_x_date(date_breaks="2 years",date_labels="%Y")+
+    labs(title="M1 Overlay — Exclusion Rate Comparison (EW)",
+         x=NULL,y="Portfolio Value ($1)",colour="Excl Rate")+
+    theme_minimal(base_size=12)+
+    theme(legend.position="bottom",axis.text.x=element_text(angle=30,hjust=1))
+  ggsave(file.path(FIGS$index_csi_track,"m1_exclusion_rates.png"),p_m1,
+         width=PLOT_WIDTH*1.2,height=PLOT_HEIGHT,dpi=PLOT_DPI)
 }
 
 cat(sprintf("\n[11_Results.R] DONE: %s\n", format(Sys.time())))
-

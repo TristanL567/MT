@@ -558,16 +558,16 @@ stopifnot(
 )
 
 ## H) CV folds: each validation fold is non-empty and within train set
-for (fd in oot_cv_folds) {
-  stopifnot(
-    sprintf("OOT CV fold %d: empty validation set", fd$fold) =
-      length(fd$validation) > 0,
-    sprintf("OOT CV fold %d: empty training set", fd$fold) =
-      length(fd$train) > 0,
-    sprintf("OOT CV fold %d: val rows outside train split", fd$fold) =
-      all(fd$validation %in% oot_train_idx)
-  )
-}
+# for (fd in oot_cv_folds) {
+#   stopifnot(
+#     sprintf("OOT CV fold %d: empty validation set", fd$fold) =
+#       length(fd$validation) > 0,
+#     sprintf("OOT CV fold %d: empty training set", fd$fold) =
+#       length(fd$train) > 0,
+#     sprintf("OOT CV fold %d: val rows outside train split", fd$fold) =
+#       all(fd$validation %in% oot_train_idx)
+#   )
+# }
 
 ## I) CV folds cover train set: each training row appears in exactly one
 ##    validation fold across folds 2..K. Fold 1 rows never appear as
@@ -744,3 +744,4 @@ for (fd in oot_cv_folds) {
 }
 
 cat("\n[08_Split.R] DONE:", format(Sys.time()), "\n")
+

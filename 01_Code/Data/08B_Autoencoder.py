@@ -140,7 +140,7 @@ assert PATH_SPLIT_LABELS.exists(), (
 #
 # ==============================================================================
 
-VAE_INPUT = "raw"    # ← CHANGE THIS: "fund" | "raw"
+VAE_INPUT = "M2"    # ← CHANGE THIS: "fund" | "raw"
 
 VAE_INPUT_CONFIG = {
     "fund": {

@@ -16,7 +16,7 @@
 
 cat("[06_Merge.R] Collapsing monthly macro to annual...\n")
 
-macro_annual <- macro_m |>
+macro_annual <- macro_monthly |>
   mutate(year = year(date)) |>
   group_by(year) |>
   summarise(

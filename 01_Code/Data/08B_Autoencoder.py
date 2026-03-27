@@ -652,7 +652,7 @@ def encode(model, X_tensor, device, batch_size=1024):
         x_batch    = x_batch.to(device)
         z_mu, z_lv = model.encoder(x_batch)
         z_samp     = model.reparameterise(z_mu, z_lv)
-        x_recon    = model.decoder(z_samp)
+        x_recon    = model.decoder(z_mu)
         err        = F.mse_loss(x_recon, x_batch, reduction="none").mean(dim=1)
         z_list.append(z_mu.cpu().numpy())
         err_list.append(err.cpu().numpy())

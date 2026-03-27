@@ -6,83 +6,80 @@
 # PURPOSE:
 #   Download macroeconomic variables from FRED via the fredr package.
 #   Aligns all series to a common monthly frequency via forward-filling,
-#   producing a clean (date, variable) panel ready for 06_Feature_Eng.R.
+#   producing a clean (date, variable) panel ready for 06_Merge.R.
 #
 # INPUTS:
 #   - config.R                      : START_DATE, END_DATE, PATH_* constants
 #   - FRED API key                  : set via fredr_set_key() in 00_Master.R
-#                                     or hardcoded here for standalone runs
 #
 # OUTPUTS:
 #   - Raw/macro_raw.rds             : list of raw FRED series, as-downloaded
-#   - Processed/macro_monthly.rds   : all series forward-filled to monthly,
+#   - Processed/macro_monthly.rds   : all series aligned to monthly,
 #                                     wide format, one row per month-end date
 #
 #   Output schema (macro_monthly.rds):
-#     date (month-end), gdp, gdp_growth, unrate, fedfunds,
-#     term_spread, hy_spread, vix, cpi, cpi_inflation,
-#     indpro, indpro_growth, recession
 #
-# SERIES PULLED AND RATIONALE:
+#   LEVELS (kept as-is — directional content already encoded or level is the
+#   meaningful feature):
+#     date (month-end)
+#     gdp             Gross Domestic Product, $bn (quarterly → fwd-filled)
+#     unrate          Unemployment rate, % (monthly level)
+#     fedfunds        Federal funds effective rate, % (monthly level)
+#     gs10            10-yr Treasury rate, % (monthly level)
+#     term_spread     GS10 − FEDFUNDS, % (monthly level)
+#     hy_spread       ICE BofA HY OAS, % (monthly level)
+#     vix             CBOE VIX, index level (monthly average of daily)
+#     cpi             CPI all-urban index (monthly level — used for inflation)
+#     indpro          Industrial production index (monthly level)
+#     recession       NBER recession indicator, 0/1 (monthly)
 #
-#   GDP          Gross Domestic Product (quarterly)
-#                Paper feature: GDP. Levels + YoY growth rate computed here.
+#   YoY CHANGES (12-month change — computed here before any aggregation):
+#     gdp_growth      GDP:    (gdp_t / gdp_t-12) - 1, %
+#     cpi_inflation   CPI:    (cpi_t / cpi_t-12) - 1, %
+#     indpro_growth   INDPRO: (indpro_t / indpro_t-12) - 1, %
+#     d_unrate        UNRATE: unrate_t - unrate_t-12 (pp change)
+#     d_hy_spread     HY OAS: hy_spread_t - hy_spread_t-12 (pp change)
+#     d_vix           VIX:    (vix_t / vix_t-12) - 1, %
 #
-#   UNRATE       Civilian Unemployment Rate (monthly)
-#                Paper feature: Unemployment_Rate. Level used directly.
+#   RATIONALE FOR VARIABLE TREATMENT:
 #
-#   FEDFUNDS     Federal Funds Effective Rate (monthly)
-#                Interest rate level — interacts with leverage features.
-#                High rates increase debt service burden for leveraged firms.
+#   GDP / CPI / INDPRO → YoY ratio change
+#     These are trending indices. The level is non-stationary and carries
+#     no cross-sectional information; the growth rate is the economically
+#     meaningful quantity for firm distress prediction.
 #
-#   GS10         10-Year Treasury Constant Maturity Rate (monthly)
-#                Used with FEDFUNDS to compute term spread (GS10 − FEDFUNDS).
-#                Term spread is a leading indicator of recession and credit stress.
+#   UNRATE → level + YoY pp change
+#     Level: captures the absolute slack in the labour market (higher
+#     unemployment = weaker demand environment for firms).
+#     Change: captures the direction — a rising rate signals deteriorating
+#     conditions even if the level is still moderate. Both matter.
 #
-#   BAMLH0A0HYM2 ICE BofA US High Yield OAS (daily → monthly)
-#                Credit spread proxy — widens before CSI clusters.
-#                One of the strongest macro predictors of distress.
+#   HY_SPREAD → level + YoY pp change
+#     Level: captures prevailing credit stress (high spread = tight credit).
+#     Change: a rapidly widening spread is a leading indicator of distress
+#     clusters, often precedes CSI events by 6–12 months.
 #
-#   VIXCLS       CBOE Volatility Index (daily → monthly)
-#                Market fear gauge — elevated VIX precedes implosion clusters.
-#                Not in paper but standard in distress prediction literature.
+#   VIX → level + YoY % change
+#     Level: contemporaneous fear gauge.
+#     Change: a sustained rise in VIX amplifies distress risk beyond the
+#     level effect. % change preferred over pp because VIX is bounded below
+#     and the absolute magnitude varies across regimes.
 #
-#   CPIAUCSL     Consumer Price Index, All Urban Consumers (monthly)
-#                Used to compute YoY inflation rate. High inflation erodes
-#                real earnings and increases input costs for zombie firms.
-#
-#   INDPRO       Industrial Production Index (monthly)
-#                Business cycle proxy — complements GDP at higher frequency.
-#                YoY growth rate computed here.
-#
-#   USREC        NBER Recession Indicator (monthly, 0/1)
-#                Binary recession flag. Useful as a regime variable in
-#                feature engineering and for robustness analysis.
+#   FEDFUNDS / GS10 / TERM_SPREAD → level only
+#     Rate levels interact directly with leverage (debt service burden).
+#     Rate *changes* are less theoretically motivated for annual prediction:
+#     the firm's balance sheet responds to the prevailing rate, not the
+#     change. Term spread already encodes the directional regime signal.
 #
 # DESIGN DECISIONS:
-#
-#   [1] Forward-fill to monthly:
-#       All series are aligned to the last calendar day of each month.
-#       Lower-frequency series (quarterly GDP) and daily series (VIX, HY spread)
-#       are forward-filled using the most recent available observation.
-#       This is the standard no-look-ahead approach for macro alignment:
-#       at any month-end, we use only information available at that date.
-#
-#   [2] Growth rates computed here, not in 06_Feature_Eng.R:
-#       GDP growth (YoY), CPI inflation (YoY), and INDPRO growth (YoY) are
-#       computed in this script from the raw levels. This keeps 06_Feature_Eng.R
-#       clean — it receives ready-to-use macro features, not raw levels that
-#       require transformation.
-#
-#   [3] Term spread computed here:
-#       term_spread = GS10 − FEDFUNDS. Negative term spread (yield curve
-#       inversion) historically precedes recessions and credit distress.
-#       Computed here so 06_Feature_Eng.R treats it as a single feature.
-#
-#   [4] Raw series saved as list before any transformation:
-#       macro_raw.rds contains the unmodified fredr() output for each series.
-#       Immutable reference — if transformation logic changes, re-run from
-#       this file without re-hitting the FRED API.
+#   [1] Forward-fill quarterly/monthly → monthly spine (no look-ahead).
+#   [2] Growth rates computed here on monthly data, before annual aggregation
+#       in 06_Merge.R. This avoids aggregating raw levels and then computing
+#       growth from the aggregate (which would conflate within-year and
+#       year-over-year changes).
+#   [3] Raw series saved before any transformation (immutable reference).
+#   [4] All lags use 12 months on the already-monthly series to ensure
+#       consistent YoY comparisons regardless of quarterly forward-filling.
 #
 #==============================================================================#
 
@@ -100,16 +97,11 @@ cat("\n[04_Macro.R] START:", format(Sys.time()), "\n")
 
 #==============================================================================#
 # 0. FRED API authentication
-#
-#    Key is set here for standalone runs of this script.
-#    In full pipeline runs via 00_Master.R, fredr_set_key() is called once
-#    before this script is sourced.
 #==============================================================================#
 
 FRED_API_KEY <- "ea754f3d4a236f5d4b2c8957fae36c4a"
 fredr_set_key(FRED_API_KEY)
 
-## Verify connection
 tryCatch({
   fredr_series("GDP")
   cat("[04_Macro.R] FRED API connection verified.\n")
@@ -119,32 +111,25 @@ tryCatch({
 
 #==============================================================================#
 # 1. Define series to pull
-#
-#    Each entry: list(id, short_name, frequency_note)
-#    Pulling from START_DATE - 2 years to ensure YoY growth rates are
-#    available from the first analysis month.
 #==============================================================================#
 
-PULL_START <- START_DATE - years(2)   # Extra history for YoY computation
+## Pull extra history for 12-month lags — 2 years before START_DATE
+PULL_START <- START_DATE - years(2)
 
 FRED_SERIES <- list(
   list(id = "GDP",          name = "gdp",       note = "Quarterly — forward-filled to monthly"),
-  list(id = "UNRATE",       name = "unrate",    note = "Monthly"),
-  list(id = "FEDFUNDS",     name = "fedfunds",  note = "Monthly"),
-  list(id = "GS10",         name = "gs10",      note = "Monthly"),
+  list(id = "UNRATE",       name = "unrate",    note = "Monthly level"),
+  list(id = "FEDFUNDS",     name = "fedfunds",  note = "Monthly level"),
+  list(id = "GS10",         name = "gs10",      note = "Monthly level"),
   list(id = "BAMLH0A0HYM2", name = "hy_spread", note = "Daily — averaged to monthly"),
   list(id = "VIXCLS",       name = "vix",       note = "Daily — averaged to monthly"),
-  list(id = "CPIAUCSL",     name = "cpi",       note = "Monthly"),
-  list(id = "INDPRO",       name = "indpro",    note = "Monthly"),
-  list(id = "USREC",        name = "recession", note = "Monthly — NBER recession indicator")
+  list(id = "CPIAUCSL",     name = "cpi",       note = "Monthly index level"),
+  list(id = "INDPRO",       name = "indpro",    note = "Monthly index level"),
+  list(id = "USREC",        name = "recession", note = "Monthly — NBER indicator 0/1")
 )
 
 #==============================================================================#
 # 2. Download all series from FRED
-#
-#    Each series pulled individually with error handling.
-#    If a single series fails, pipeline warns but continues — macro data
-#    is supplementary; a missing series should not halt the pipeline.
 #==============================================================================#
 
 cat("[04_Macro.R] Pulling", length(FRED_SERIES), "series from FRED...\n")
@@ -163,7 +148,8 @@ for (s in FRED_SERIES) {
       select(date, value) |>
       rename(!!s$name := value)
   }, error = function(e) {
-    warning(sprintf("\n[04_Macro.R] WARNING: Failed to pull %s: %s", s$id, e$message))
+    warning(sprintf("\n[04_Macro.R] WARNING: Failed to pull %s: %s",
+                    s$id, e$message))
     NULL
   })
   
@@ -175,83 +161,63 @@ for (s in FRED_SERIES) {
   }
 }
 
-## Save raw — immutable reference before any transformation
 saveRDS(macro_raw, PATH_MACRO_RAW)
 cat("[04_Macro.R] Raw series saved to PATH_MACRO_RAW\n")
 
 #==============================================================================#
-# 3. Build monthly date spine
-#
-#    All series will be aligned to this spine via forward-fill.
-#    Using last day of each month as the reference date — consistent with
-#    prices_monthly which uses month-end dates from crsp.msf.
+# 3. Build monthly date spine (month-end dates)
 #==============================================================================#
 
 date_spine <- tibble(
   date = seq(
-    from = floor_date(PULL_START,  "month"),
-    to   = floor_date(END_DATE,    "month"),
+    from = floor_date(PULL_START, "month"),
+    to   = floor_date(END_DATE,   "month"),
     by   = "month"
   )
 ) |>
-  mutate(date = ceiling_date(date, "month") - days(1))   # Last day of month
+  mutate(date = ceiling_date(date, "month") - days(1))
 
-cat("[04_Macro.R] Monthly date spine:", nrow(date_spine),
-    "months from", format(min(date_spine$date)),
-    "to", format(max(date_spine$date)), "\n")
+cat("[04_Macro.R] Monthly date spine:", nrow(date_spine), "months from",
+    format(min(date_spine$date)), "to", format(max(date_spine$date)), "\n")
 
 #==============================================================================#
 # 4. Align each series to monthly frequency
 #
-#    Strategy by native frequency:
-#
-#    QUARTERLY (GDP):
-#      Each quarter's value is assigned to the last day of the quarter.
-#      Forward-filled to monthly — Q1 value persists through Jan/Feb/Mar.
-#      This is the standard approach: at any month-end you know the most
-#      recently released quarterly GDP figure.
-#
-#    DAILY (VIX, HY spread):
-#      Averaged within each month to a single monthly value.
-#      Monthly average is more stable than a single end-of-month observation
-#      and better captures the prevailing macro regime during the month.
-#
-#    MONTHLY (all others):
-#      Joined directly to the date spine on exact date match,
-#      then forward-filled for any gaps (e.g. holidays, missing releases).
+#   QUARTERLY (GDP): assign to quarter end, forward-fill to monthly.
+#   DAILY (VIX, HY spread): average within each calendar month.
+#   MONTHLY (all others): align to month-end, forward-fill any gaps.
 #==============================================================================#
 
 fn_align_to_monthly <- function(series_df, series_name, date_spine) {
   
-  col_name <- setdiff(names(series_df), "date")
-  
-  ## Determine native frequency from observation spacing
-  date_gaps <- as.integer(diff(sort(series_df$date)))
+  col_name   <- setdiff(names(series_df), "date")
+  date_gaps  <- as.integer(diff(sort(series_df$date)))
   median_gap <- median(date_gaps, na.rm = TRUE)
   
   if (median_gap <= 7) {
-    ## DAILY: average within each month
+    ## DAILY → monthly average
     aligned <- series_df |>
       mutate(date = ceiling_date(floor_date(date, "month"), "month") - days(1)) |>
       group_by(date) |>
-      summarise(!!col_name := mean(.data[[col_name]], na.rm = TRUE), .groups = "drop")
+      summarise(!!col_name := mean(.data[[col_name]], na.rm = TRUE),
+                .groups = "drop")
     
   } else if (median_gap >= 80) {
-    ## QUARTERLY: assign to month-end, then forward-fill
+    ## QUARTERLY → assign to last month of quarter, then forward-fill
     aligned <- series_df |>
       mutate(date = ceiling_date(date + months(2), "month") - days(1)) |>
-      ## Assign to last month of quarter (e.g. Q1 Jan → Mar 31)
       select(date, !!col_name)
     
   } else {
-    ## MONTHLY: align to month-end directly
+    ## MONTHLY → align to month-end
     aligned <- series_df |>
       mutate(date = ceiling_date(floor_date(date, "month"), "month") - days(1)) |>
       group_by(date) |>
-      summarise(!!col_name := mean(.data[[col_name]], na.rm = TRUE), .groups = "drop")
+      summarise(!!col_name := mean(.data[[col_name]], na.rm = TRUE),
+                .groups = "drop")
   }
   
-  ## Join to spine and forward-fill
+  ## Join to spine and forward-fill (no look-ahead — uses last known value)
   result <- date_spine |>
     left_join(aligned, by = "date") |>
     arrange(date) |>
@@ -281,36 +247,70 @@ for (s in FRED_SERIES) {
 #==============================================================================#
 # 6. Compute derived macro features
 #
-#    All growth rates are YoY (12-month lag) to avoid seasonality.
-#    Lag is applied to the already-monthly-aligned series.
+#   All computations operate on the monthly-aligned series.
+#   12-month lags are used throughout for consistent YoY comparisons.
+#
+#   RATIO changes (gdp, cpi, indpro):
+#     (x_t / x_{t-12}) - 1  expressed as a decimal (not multiplied by 100)
+#     Reason: consistent with how these appear in the ML feature matrix
+#     after quantile transform. Decimal form avoids scale discontinuity
+#     when combined with level features.
+#
+#   PP changes (unrate, hy_spread):
+#     x_t - x_{t-12}
+#     Reason: both variables are already expressed in % or percentage points,
+#     so a pp change is natural and directly interpretable.
+#
+#   VIX change: (vix_t / vix_{t-12}) - 1
+#     Reason: VIX is strictly positive and the distribution is log-approximately
+#     normal. A 10-point move from 12 to 22 is qualitatively different from
+#     a 10-point move from 35 to 45. % change normalises for the level.
+#
+#   Term spread: gs10 - fedfunds (level, computed here)
+#     Negative term spread = yield curve inversion = recession precursor.
 #==============================================================================#
 
-cat("[04_Macro.R] Computing derived features...\n")
+cat("[04_Macro.R] Computing derived macro features...\n")
 
 macro_monthly <- macro_aligned |>
   arrange(date) |>
   mutate(
-    ## GDP: YoY growth rate (quarterly data forward-filled to monthly)
-    gdp_growth    = (gdp    / lag(gdp,    12) - 1) * 100,
     
-    ## CPI: YoY inflation rate
-    cpi_inflation = (cpi    / lag(cpi,    12) - 1) * 100,
+    ##── YoY ratio changes ────────────────────────────────────────────────────
+    gdp_growth    = gdp    / lag(gdp,    12) - 1,   ## decimal, e.g. 0.025 = 2.5%
+    cpi_inflation = cpi    / lag(cpi,    12) - 1,   ## decimal
+    indpro_growth = indpro / lag(indpro, 12) - 1,   ## decimal
     
-    ## Industrial production: YoY growth rate
-    indpro_growth = (indpro / lag(indpro, 12) - 1) * 100,
+    ##── YoY percentage-point changes ─────────────────────────────────────────
+    ## Change in unemployment rate (pp): captures direction of labour market
+    d_unrate      = unrate    - lag(unrate,    12),  ## pp, e.g. +1.5 = rate rose 1.5pp
     
-    ## Term spread: 10Y Treasury minus Fed Funds Rate
-    ## Negative = yield curve inversion = recession leading indicator
-    term_spread   = gs10 - fedfunds,
+    ## Change in HY spread (pp): rising spread = tightening credit = distress precursor
+    d_hy_spread   = hy_spread - lag(hy_spread, 12),  ## pp
     
-    ## Recession flag: ensure integer (FRED returns numeric 0/1)
+    ##── VIX: YoY % change ────────────────────────────────────────────────────
+    ## % change preferred over pp — see rationale above
+    d_vix         = vix / lag(vix, 12) - 1,          ## decimal
+    
+    ##── Term spread (level) ──────────────────────────────────────────────────
+    term_spread   = gs10 - fedfunds,                  ## pp, level
+    
+    ##── Recession flag ───────────────────────────────────────────────────────
     recession     = as.integer(recession)
   ) |>
-  ## Restrict to analysis window after growth rate computation
-  ## (keep PULL_START buffer rows for lag, then trim)
+  
+  ## Restrict to analysis window after lag computation
   filter(date >= ceiling_date(floor_date(START_DATE, "month"), "month") - days(1))
 
 cat("[04_Macro.R] Derived features computed.\n")
+
+## Report NA counts for derived variables (expected for first 12 months)
+derived_vars <- c("gdp_growth", "cpi_inflation", "indpro_growth",
+                  "d_unrate", "d_hy_spread", "d_vix", "term_spread")
+cat("  NA counts for derived features (expected ~12 for YoY vars):\n")
+for (v in derived_vars) {
+  cat(sprintf("    %-18s : %d NAs\n", v, sum(is.na(macro_monthly[[v]]))))
+}
 
 #==============================================================================#
 # 7. Assertions
@@ -324,23 +324,33 @@ if (n_dup > 0)
   stop(sprintf("[04_Macro.R] ASSERTION FAILED: %d duplicate dates.", n_dup))
 
 ## B) Date range covers full analysis window
-if (min(macro_monthly$date) > as.Date("1998-01-31"))
+if (min(macro_monthly$date) > as.Date("1993-01-31"))
   stop("[04_Macro.R] ASSERTION FAILED: macro_monthly starts after START_DATE.")
 if (max(macro_monthly$date) < as.Date("2024-11-30"))
   stop("[04_Macro.R] ASSERTION FAILED: macro_monthly ends before END_DATE.")
 
-## C) Core series not entirely missing
-core_vars <- c("gdp", "unrate", "fedfunds", "cpi", "hy_spread")
+## C) Core series not mostly missing
+core_vars <- c("gdp", "unrate", "fedfunds", "cpi", "hy_spread",
+               "gdp_growth", "cpi_inflation", "d_unrate", "d_hy_spread")
 for (v in core_vars) {
   if (v %in% names(macro_monthly)) {
     pct_na <- mean(is.na(macro_monthly[[v]]))
-    if (pct_na > 0.05)
+    if (pct_na > 0.10)
       warning(sprintf("[04_Macro.R] WARNING: %s is %.1f%% missing after fill.",
                       v, 100 * pct_na))
   }
 }
 
-## D) Plausible row count
+## D) YoY direction checks — sanity on sign
+## During 2008-2009 recession, gdp_growth should go negative
+gdp_2009 <- macro_monthly |>
+  filter(format(date, "%Y") == "2009") |>
+  pull(gdp_growth) |>
+  mean(na.rm = TRUE)
+if (!is.na(gdp_2009) && gdp_2009 > 0)
+  warning("[04_Macro.R] WARNING: gdp_growth positive in 2009 — check computation.")
+
+## E) Plausible row count
 expected_months <- interval(START_DATE, END_DATE) %/% months(1) + 1L
 if (nrow(macro_monthly) < expected_months - 2L)
   stop(sprintf("[04_Macro.R] ASSERTION FAILED: Only %d rows, expected ~%d.",
@@ -349,7 +359,7 @@ if (nrow(macro_monthly) < expected_months - 2L)
 cat("[04_Macro.R] All assertions passed.\n")
 
 #==============================================================================#
-# 8. Save processed macro panel
+# 8. Save
 #==============================================================================#
 
 saveRDS(macro_monthly, PATH_MACRO_MONTHLY)
@@ -360,20 +370,25 @@ cat("[04_Macro.R] Monthly macro panel saved:", nrow(macro_monthly), "rows\n")
 #==============================================================================#
 
 cat("\n[04_Macro.R] ══════════════════════════════════════\n")
-cat("  Rows              :", nrow(macro_monthly), "\n")
-cat("  Date range        :", format(min(macro_monthly$date)),
+cat("  Rows         :", nrow(macro_monthly), "\n")
+cat("  Date range   :", format(min(macro_monthly$date)),
     "to", format(max(macro_monthly$date)), "\n")
-cat("  Columns           :", ncol(macro_monthly), "\n")
+cat("  Columns      :", ncol(macro_monthly), "\n")
+
+cat("\n  Variable treatment summary:\n")
+cat("    LEVELS    : gdp, unrate, fedfunds, gs10, hy_spread, vix, cpi,",
+    "indpro, term_spread, recession\n")
+cat("    YoY ratio : gdp_growth, cpi_inflation, indpro_growth, d_vix\n")
+cat("    YoY pp    : d_unrate, d_hy_spread\n")
 
 cat("\n  Variable coverage (% non-missing):\n")
 all_vars <- setdiff(names(macro_monthly), "date")
 for (v in all_vars) {
   pct <- 100 * mean(!is.na(macro_monthly[[v]]))
-  cat(sprintf("    %-18s : %5.1f%%\n", v, pct))
+  cat(sprintf("    %-20s : %5.1f%%\n", v, pct))
 }
 
 cat("\n  Macro snapshot — most recent month:\n")
 print(tail(macro_monthly, 1))
 
 cat("\n[04_Macro.R] DONE:", format(Sys.time()), "\n")
-

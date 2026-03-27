@@ -1,394 +1,331 @@
 #==============================================================================#
 #==== 00_Master.R =============================================================#
-#==== Pipeline Orchestrator ===================================================#
+#==== Pipeline Orchestration — "The Agony and the Ecstasy" ===================#
 #==============================================================================#
-#
-# PROJECT:
-#   "The Agony and the Ecstasy" — Constructing a Crash-Filtered Equity Index
-#   using Machine Learning. Master's Thesis, WU Wien.
-#   Supervisor: Prof. Kurt Hornik
-#
-# AUTHOR:  Tristan Leiter
-# UPDATED: 2026
 #
 # PURPOSE:
-#   Single entry point for the entire pipeline. Sources config.R first,
-#   establishes the WRDS connection, then runs each stage in sequence.
-#   Every stage can also be run independently by sourcing it directly —
-#   all inputs are read from disk via PATH_* constants in config.R.
+#   Single entry point for the full pipeline. Run sections selectively or
+#   end-to-end. Each section is guarded by a RUN_* flag so you can skip
+#   completed steps without re-running expensive operations.
 #
-# PIPELINE OVERVIEW:
-#   00_Master.R           Orchestrator (this file)
-#   config.R              Single source of truth — all parameters and paths
-#   ──────────────────────────────────────────────────────────────────────
-#   01_Universe.R         CRSP stock universe construction
-#   02_Prices.R           CRSP price and return download
-#   03_Fundamentals.R     Compustat accounting variable download + CCM merge
-#   04_Macro.R            FRED macroeconomic variable download
-#   05_CSI_Label.R        Catastrophic Stock Implosion label construction
-#   ──────────────────────────────────────────────────────────────────────
-#   06_Merge.R            Master panel assembly + reporting lag + validation
-#   06B_Feature_Eng.R     Feature engineering and rolling aggregations
-#   ──────────────────────────────────────────────────────────────────────
-#   07_Feature_Sel.R      Feature selection (Boruta) on raw features
-#   08_Split.R            Train / test / OOS split construction
-#   08B_Autoencoder.py    Autoencoder — PIT normalisation + VAE (Python/PyCharm)
-#   ──────────────────────────────────────────────────────────────────────
-#   09_Train.R            Model training with cross-validated HPO
-#   10_Evaluate.R         Model evaluation — Recall at fixed FPR
-#   11_Results.R          Index construction and backtest
-#   12_Robustness.R       Sensitivity analysis across CSI parameter grid
+# THESIS:
+#   "The Agony and the Ecstasy" — Crash-Filtered Equity Index Construction
+#   via Machine Learning. WU Wien, supervised by Prof. Kurt Hornik.
 #
-# STAGE GROUPINGS:
-#   DATA ACQUISITION   (01–04) : Requires live WRDS connection
-#   LABEL CONSTRUCTION (05)    : Offline — reads from disk
-#   DATA PREPARATION   (06–06B): Offline — merge and engineer features
-#   MODELLING          (07–12) : Offline — select, split, encode, train,
-#                                evaluate, backtest
+# DATA SOURCES:
+#   CRSP    : prices, returns, delisting (via WRDS)
+#   Compustat: annual fundamentals (via WRDS CCM link)
+#   FRED    : macro variables (via fredr API)
 #
-# WHY AUTOENCODER IS AT 08B (NOT 06C):
-#   The autoencoder uses PIT normalisation fitted on the TRAINING set only.
-#   This requires the train/test split (08_Split.R) to exist before training.
-#   Moving it to 08B ensures:
-#     - Boruta (07) runs on raw untransformed features
-#     - Split indices exist before PIT fitting — no leakage
-#     - Autoencoder is trained only on training data
-#     - Latent features are available for 09_Train.R alongside raw features
+# MODEL VARIANTS:
+#   M1  : CSI prediction, fundamentals only (features_fund.rds)
+#   M3  : CSI prediction, full features (features_raw.rds)
+#   B1  : 5-yr CAGR bucket classifier (features_fund.rds, labels_bucket.rds)
+#   BS  : B1-structural combined label (features_fund.rds, labels_structural.rds)
 #
-# RUNTIME NOTES:
-#   - Stages 01–04 require a live WRDS connection (wrds object).
-#   - Stages 05–12 are fully offline — they read from disk only.
-#   - Stage 08B runs in Python (PyCharm) — see 08B_Autoencoder.py.
-#     R pipeline waits for features_latent.rds to be written by Python
-#     before 09_Train.R proceeds.
-#   - Each stage saves its outputs to disk before the next stage begins.
-#     A crash in any stage does not corrupt prior outputs.
-#   - To re-run from a specific stage, comment out earlier source() calls.
-#
-# DATA FLOW:
-#   WRDS ──► 01 ──► universe.rds
-#        ──► 02 ──► prices_weekly.rds, prices_monthly.rds
-#        ──► 03 ──► fundamentals.rds
-#        ──► 04 ──► macro_monthly.rds
-#                    │
-#                    ▼
-#             05 ──► labels_base.rds, labels_all_grid.rds
-#                    │
-#                    ▼
-#             06 ──► panel_raw.rds          (joined, lagged, filtered)
-#            06B ──► features_raw.rds       (ratios + rolling aggregations)
-#                    │
-#                    ▼
-#             07 ──► features_selected.rds  (Boruta on raw features)
-#             08 ──► splits.rds             (train/test/OOS indices)
-#            08B ──► features_latent.rds    (Python: PIT + VAE latent space)
-#                    │
-#                    ▼
-#             09 ──► models/*.rds           (raw features + latent features)
-#             10 ──► evaluation_results.rds
-#             11 ──► index_returns.rds, backtest_summary.rds
-#             12 ──► robustness_results.rds
+# INDEX STRATEGIES:
+#   S1  : M1 exclusion (top 5% by score)
+#   S4  : M1 + zombie recovery filter
+#   S5  : Tiered threshold (3%/8% + altman_z2)
+#   S6  : B1 exclusion (top 20% by score)
+#   C1  : B1-structural concentrated long 200
+#   C3  : C1 + M1 veto (two-layer filter)
 #
 #==============================================================================#
 
-#==============================================================================#
-# 1. Environment Setup
-#==============================================================================#
-
-## Working directory — set to the script's own location
+## ── Working directory ────────────────────────────────────────────────────────
 ## Requires: install.packages("this.path")
+suppressPackageStartupMessages(library(this.path))
 Directory <- this.path::this.dir()
 setwd(Directory)
 
-## Load all required packages
-## Auto-installs any missing package before loading
-packages <- c(
-  ## Core data manipulation
-  "here", "dplyr", "tidyr", "tidyverse", "lubridate", "data.table",
+## ── Package loading ──────────────────────────────────────────────────────────
+.packages <- c(
+  ## Core
+  "here", "data.table", "dplyr", "tidyr", "lubridate",
   ## Database / WRDS
   "RPostgres", "RSQLite", "dbplyr", "tidyfinance",
   ## FRED
   "fredr",
   ## Time series
   "xts", "slider",
-  ## Machine learning
+  ## Machine learning (R-side)
   "xgboost", "lightgbm", "randomForest",
   ## Visualisation
-  "ggplot2", "scales",
+  "ggplot2", "scales", "patchwork",
+  ## Model evaluation
+  "pROC", "PRROC",
+  ## Tree models
+  "rpart", "rpart.plot",
+  ## Parquet
+  "arrow",
   ## Utilities
-  "purrr", "stringr"
+  "purrr", "stringr", "forcats"
 )
 
-for (pkg in packages) {
-  if (!requireNamespace(pkg, quietly = TRUE)) {
-    install.packages(pkg)
-    cat(sprintf("Installed: %s\n", pkg))
+for (.pkg in .packages) {
+  if (!requireNamespace(.pkg, quietly = TRUE)) {
+    install.packages(.pkg, quiet = TRUE)
+    cat(sprintf("[00_Master] Installed: %s\n", .pkg))
   }
-  suppressPackageStartupMessages(library(pkg, character.only = TRUE))
+  suppressPackageStartupMessages(library(.pkg, character.only = TRUE))
 }
+rm(.packages, .pkg)
+cat("[00_Master] All packages loaded.\n")
 
-cat("[00_Master.R] Packages loaded.\n")
-
-#==============================================================================#
-# 2. Configuration
-#==============================================================================#
-
+## ── Config ───────────────────────────────────────────────────────────────────
 source("config.R")
 
-#==============================================================================#
-# 3. WRDS Connection
-#==============================================================================#
-
-wrds <- get_wrds_connection()
-cat("[00_Master.R] WRDS connection established.\n")
-print(wrds)
+## ── Initialise all figure directories ────────────────────────────────────────
+FIGS <- fn_setup_figure_dirs()
+cat(sprintf("[00_Master] Figure directories ready under %s\n", DIR_FIGURES))
 
 #==============================================================================#
-# DATA ACQUISITION (stages 01–04 — requires WRDS)
+# RUN FLAGS — set TRUE to execute, FALSE to skip
 #==============================================================================#
 
-#==============================================================================#
-# Stage 01 — Universe Construction
-#
-#   Key output : universe.rds
-#   Status     : COMPLETE ✓
-#==============================================================================#
+## Data pipeline (01–04): run once, outputs cached
+RUN_01_UNIVERSE     <- FALSE  ## CRSP universe construction
+RUN_02_PRICES       <- FALSE  ## monthly/weekly prices + delisting
+RUN_03_FUNDAMENTALS <- FALSE  ## Compustat fundamentals + CCM link
+RUN_04_MACRO        <- FALSE  ## FRED macro variables
 
-source("01_Universe.R")
+## Label construction (05): run when data changes or parameters change
+RUN_05_CSI          <- FALSE  ## CSI base case + 27-parameter grid
+RUN_05B_BUCKET      <- FALSE  ## 5-year forward CAGR bucket labels
+RUN_05C_STRUCTURAL  <- FALSE  ## Combined CSI + bucket structural labels
 
-#==============================================================================#
-# Stage 02 — Price & Return Download
-#
-#   Key outputs: prices_weekly.rds, prices_monthly.rds
-#   Status     : COMPLETE ✓
-#==============================================================================#
+## Feature engineering (06): run when panel or features change
+RUN_06_MERGE        <- FALSE  ## panel merge
+RUN_06B_FEATURES    <- FALSE  ## feature engineering
 
-source("02_Prices.R")
+## Model preparation (07–08)
+RUN_07_FEATSEL      <- FALSE  ## feature selection diagnostics
+RUN_08_SPLIT        <- FALSE  ## train/test/OOS split construction
+## 08B_Autoencoder.py is run separately in Python (VAE — M2/M4)
 
-#==============================================================================#
-# Stage 03 — Fundamentals Download
-#
-#   Downloads ~60 Compustat variables. Point-in-time CCM merge.
-#
-#   Key output : fundamentals.rds
-#   Status     : COMPLETE ✓ — 176,495 rows, 18,526 permno
-#==============================================================================#
+## AutoML training — run in Python (09C_AutoGluon.py), not from here
+## MODEL = "fund"        → M1
+## MODEL = "raw"         → M3
+## MODEL = "bucket"      → B1-bucket
+## MODEL = "structural"  → B1-structural
 
-source("03_Fundamentals.R")
+## R-side evaluation and index construction
+RUN_10_EVALUATE     <- FALSE  ## model evaluation (AUC, AP, decile tables)
+RUN_11_RESULTS      <- FALSE  ## index construction (S1–S6, benchmark)
+RUN_12_EVALUATION   <- FALSE  ## index diagnostics
 
-#==============================================================================#
-# Stage 04 — Macro Variables
-#
-#   Downloads 9 FRED series. Forward-fills to monthly. Computes derived
-#   features: GDP growth, CPI inflation, INDPRO growth, term spread.
-#
-#   Key output : macro_monthly.rds
-#   Status     : COMPLETE ✓
-#==============================================================================#
-
-source("04_Macro.R")
+## Robustness and comparison
+RUN_13_ROBUSTNESS   <- FALSE  ## Parts A–E
+RUN_14_COMPARISON   <- FALSE  ## vs low-vol and quality benchmarks
 
 #==============================================================================#
-# LABEL CONSTRUCTION (stage 05 — offline)
+# Helper: run a script with timing and error handling
 #==============================================================================#
 
-#==============================================================================#
-# Stage 05 — CSI Label Construction
-#
-#   Drawdown from rolling peak. CSI: drawdown < -80%, zombie T=18 months,
-#   max recovery M=-20%. Annual labels. 27-combination sensitivity grid.
-#
-#   Key outputs: labels_base.rds, labels_all_grid.rds, csi_diagnostics.rds
-#   Status     : COMPLETE ✓ — 9.66% base case prevalence, 16,466 events
-#==============================================================================#
-
-source("05_CSI_Label.R")
-
-#==============================================================================#
-# DATA PREPARATION (stages 06–06B — offline)
-#==============================================================================#
-
-#==============================================================================#
-# Stage 06 — Master Panel Assembly
-#
-#   Joins labels + fundamentals + prices + macro → (permno, year) panel.
-#   Applies 3-month Compustat reporting lag. Lifetime filter (>=5 years).
-#
-#   Key output : panel_raw.rds
-#   Status     : COMPLETE ✓ — 127,649 rows, 12,895 permno, 90 columns
-#==============================================================================#
-
-source("06_Merge.R")
-
-#==============================================================================#
-# Stage 06B — Feature Engineering
-#
-#   ~463 features across 11 families: point-in-time ratios, YoY changes,
-#   acceleration, expanding mean/vol, peak deterioration, consecutive
-#   declines, accounting momentum, rolling 3yr/5yr stats, price momentum,
-#   macro interactions. Altman Z-score components included.
-#
-#   Key output : features_raw.rds
-#   Status     : COMPLETE ✓ — 127,649 rows, 463 features
-#==============================================================================#
-
-source("06B_Feature_Eng.R")
-
-#==============================================================================#
-# MODELLING PREPARATION (stages 07–08B)
-#==============================================================================#
-
-#==============================================================================#
-# Stage 07 — Feature Selection (Boruta)
-#
-#   Applies Boruta algorithm on the TRAINING set (raw features only).
-#   Identifies confirmed-important features above the shadow-feature threshold.
-#   Run before the split exists — uses temporal split boundary directly.
-#   Reduces 463 features to ~80–150 confirmed features.
-#
-#   Key output : features_selected.rds
-#   Status     : NOT YET WRITTEN
-#==============================================================================#
-
-# source("07_Feature_Sel.R")
-
-#==============================================================================#
-# Stage 08 — Train / Validation / OOS Split
-#
-#   Three-way split:
-#     Train  : 1993–2015 (cross-validated HPO)
-#     Test   : 2016–2019 (model selection)
-#     OOS    : 2020–2024 (backtest — never touched during training)
-#   Split at firm-year level — no firm spans multiple sets.
-#   Outputs row indices and pre-split feature matrices for 09_Train.R.
-#
-#   Key output : splits.rds
-#   Status     : NOT YET WRITTEN
-#==============================================================================#
-
-# source("08_Split.R")
-
-#==============================================================================#
-# Stage 08B — Autoencoder / VAE (Python — PyCharm)
-#
-#   !! RUN IN PYTHON — see 08B_Autoencoder.py !!
-#
-#   Reads: features_raw.rds (via reticulate or saved as parquet/csv)
-#          splits.rds (train indices for PIT fitting and VAE training)
-#
-#   Steps:
-#     1. Load features_raw and split indices
-#     2. Apply QuantileTransform (uniform [0,1]) fitted on TRAIN set only
-#        — prevents test/OOS distribution from leaking into normalisation
-#     3. Classify features: continuous, bounded [0,1], binary (recession flag)
-#     4. Train VAE on normalised train set:
-#        - Manual training loop (KL warmup, early stopping, weight restore)
-#        - Mixed loss: MSE for continuous, BCE for binary
-#        - Beta-VAE with β = 3.0
-#     5. Extract z_mean as latent features for train/test/OOS
-#     6. Compute reconstruction error (anomaly score) per firm-year
-#     7. Save features_latent.rds — latent dims + recon error
-#        (readable by R via arrow::read_parquet or reticulate)
-#
-#   Architecture (auto-derived from input dimensions):
-#     Input      : ~463 features (or Boruta-selected subset)
-#     Encoder    : 926 → 694 → min_last → latent_dim (≈ √463 ≈ 21)
-#     Decoder    : mirror of encoder
-#     Latent dim : max(4, floor(√n_features))
-#
-#   Addresses thesis subquestion 1:
-#     Does autoencoder feature extraction improve Average Precision vs
-#     raw features alone?
-#
-#   Key output : features_latent.rds  (or features_latent.parquet)
-#   Status     : NOT YET WRITTEN
-#   Language   : Python 3.10 | TensorFlow 2.15 | Keras
-#   Location   : 08B_Autoencoder.py  (same project directory)
-#
-#   NOTE: 09_Train.R will not run until features_latent.rds exists.
-#         Implement a file-existence check at the top of 09_Train.R.
-#==============================================================================#
-
-## Stage 08B runs in Python — no source() call here.
-## After running 08B_Autoencoder.py in PyCharm, verify output exists:
-if (!file.exists(PATH_FEATURES_LATENT)) {
-  warning(paste(
-    "[00_Master.R] WARNING: features_latent.rds not found.",
-    "Run 08B_Autoencoder.py in PyCharm before proceeding to 09_Train.R.",
-    "Downstream stages requiring latent features will be skipped."
-  ))
+fn_run_script <- function(script_name, description) {
+  path <- file.path(DIR_CODE, script_name)
+  if (!file.exists(path)) {
+    cat(sprintf("[00_Master] WARNING: %s not found — skipping\n", script_name))
+    return(invisible(FALSE))
+  }
+  cat(sprintf("\n[00_Master] ════ Running: %s (%s) ════\n",
+              script_name, description))
+  t0 <- proc.time()
+  tryCatch(
+    source(path, local = FALSE),
+    error = function(e) {
+      cat(sprintf("[00_Master] ERROR in %s:\n  %s\n", script_name, e$message))
+      stop(e)
+    }
+  )
+  elapsed <- round((proc.time() - t0)["elapsed"], 1)
+  cat(sprintf("[00_Master] ✓ %s complete (%.1fs)\n", script_name, elapsed))
+  invisible(TRUE)
 }
 
 #==============================================================================#
-# MODELLING (stages 09–12 — offline)
+# 01 — Universe Construction
 #==============================================================================#
 
-#==============================================================================#
-# Stage 09 — Model Training
-#
-#   Trains five model families × two feature sets = 10 models:
-#     Logistic Regression (interpretable baseline)
-#     Random Forest, XGBoost, CatBoost, LightGBM
-#     × raw features (from 07) and latent features (from 08B)
-#   HPO via 5-fold time-series CV, optimising Average Precision.
-#   Quantile transformation applied per-feature inside training loop
-#   (QuantileTransformUniform, fitted on train set only).
-#
-#   Key outputs: models/model_<name>_<feature_set>.rds (10 files)
-#   Status     : NOT YET WRITTEN
-#==============================================================================#
-
-# source("09_Train.R")
+if (RUN_01_UNIVERSE) {
+  fn_run_script("Data/01_Universe.R",
+                "CRSP universe — valid exchanges, share types, lifetime filter")
+}
 
 #==============================================================================#
-# Stage 10 — Evaluation
-#
-#   Evaluates all 10 models on the test set (2016–2019).
-#   Primary: Recall at fixed FPR (3% and 5% — FPR_CONSTRAINTS in config.R).
-#   Secondary: AUC-ROC, Average Precision, MCC.
-#   Selects best model for index construction.
-#   Benchmarks vs: MinVol, Low-Beta, Altman Z-score classifier.
-#
-#   Key output : evaluation_results.rds
-#   Status     : NOT YET WRITTEN
+# 02 — Prices
 #==============================================================================#
 
-# source("10_Evaluate.R")
+if (RUN_02_PRICES) {
+  fn_run_script("Data/02_Prices.R",
+                "Monthly + weekly prices, delisting returns, CRSP adjustments")
+}
 
 #==============================================================================#
-# Stage 11 — Index Construction & Backtest
-#
-#   OOS period: 2020–2024.
-#   Crash-Filtered index: excludes firms where P(CSI) > theta.
-#   theta calibrated to FPR <= 5% on test set.
-#   Annual rebalancing at calendar year-end.
-#   Benchmarks: equal-weight market, MinVol, Low-Beta, Altman Z-score.
-#
-#   Key outputs: index_returns.rds, backtest_summary.rds
-#   Status     : NOT YET WRITTEN
+# 03 — Fundamentals
 #==============================================================================#
 
-# source("11_Results.R")
+if (RUN_03_FUNDAMENTALS) {
+  fn_run_script("Data/03_Fundamentals.R",
+                "Compustat annual fundamentals, CCM permno-gvkey link")
+}
 
 #==============================================================================#
-# Stage 12 — Robustness Analysis
-#
-#   Re-runs modelling pipeline across all 27 CSI_GRID combinations.
-#   Label prevalence stability, AUC stability, index return stability.
-#
-#   Key output : robustness_results.rds
-#   Status     : NOT YET WRITTEN
+# 04 — Macro
 #==============================================================================#
 
-# source("12_Robustness.R")
+if (RUN_04_MACRO) {
+  fn_run_script("Data/04_Macro.R",
+                "FRED: term spread, HY spread, VIX, unemployment, recession")
+}
 
 #==============================================================================#
-# Pipeline Complete
+# 05 — Label Construction
 #==============================================================================#
 
-cat("\n[00_Master.R] ══════════════════════════════════════════\n")
-cat("  Pipeline run complete.\n")
-cat(sprintf("  Timestamp : %s\n", format(Sys.time())))
-cat(sprintf("  Period    : %s to %s\n", format(START_DATE), format(END_DATE)))
-cat(sprintf("  Seed      : %d\n", SEED))
-cat("[00_Master.R] All active stages completed successfully.\n")
+if (RUN_05_CSI) {
+  fn_run_script("Data/05_CSI_Label.R",
+                "CSI labels: base case (C=-0.8, M=-0.2, T=18) + 27-param grid")
+}
+
+if (RUN_05B_BUCKET) {
+  fn_run_script("Data/05B_Bucket_Labels.R",
+                "Bucket labels: 5-yr forward CAGR < -2% vs >= 0%")
+}
+
+if (RUN_05C_STRUCTURAL) {
+  fn_run_script("Data/05C_Structural_Labels.R",
+                "Structural labels: combined CSI + bucket (phoenix reclassification)")
+}
+
+#==============================================================================#
+# 06 — Panel + Feature Engineering
+#==============================================================================#
+
+if (RUN_06_MERGE) {
+  fn_run_script("Data/06_Merge.R",
+                "Panel merge: CRSP prices + Compustat fundamentals + macro")
+}
+
+if (RUN_06B_FEATURES) {
+  fn_run_script("Data/06B_Feature_Eng.R",
+                paste0("Feature engineering → features_raw.rds (~463 features) ",
+                       "and features_fund.rds (fundamentals + macro, no price)"))
+}
+
+#==============================================================================#
+# 07–08 — Preparation
+#==============================================================================#
+
+if (RUN_07_FEATSEL) {
+  fn_run_script("Data/07_Feature_Sel.R",
+                "Feature selection diagnostics (VIF, correlation, importance)")
+}
+
+if (RUN_08_SPLIT) {
+  fn_run_script("Data/08_Split.R",
+                "Train/test/OOS split: train <= 2015, test 2016-2019, OOS 2020+")
+}
+
+#==============================================================================#
+# 09 — AutoML Training (Python — run separately)
+#==============================================================================#
+
+cat("\n[00_Master] ── AutoML Training (Python) ─────────────────────────────\n")
+cat("  Run 09C_AutoGluon.py separately with MODEL set to:\n")
+cat("    'fund'       → M1  (CSI, fundamentals)       → Tables/ag_fund/\n")
+cat("    'raw'        → M3  (CSI, full features)       → Tables/ag_raw/\n")
+cat("    'bucket'     → B1  (5yr CAGR bucket)          → Tables/ag_bucket/\n")
+cat("    'structural' → BS  (combined structural label) → Tables/ag_structural/\n")
+cat("  NOTE: Remove year_cat, use term_spread/hy_spread/vix/recession instead.\n")
+
+#==============================================================================#
+# 10 — Model Evaluation
+#==============================================================================#
+
+if (RUN_10_EVALUATE) {
+  fn_run_script("ML/10_Evaluate.R",
+                "AUC, AP, PR curves, decile tables for M1/M3/B1/BS")
+}
+
+#==============================================================================#
+# 11 — Index Construction
+#==============================================================================#
+
+if (RUN_11_RESULTS) {
+  fn_run_script("ML/11_Results.R",
+                "Index construction: benchmark, S1-S6, C1-C3 backtest")
+}
+
+#==============================================================================#
+# 12 — Index Diagnostics
+#==============================================================================#
+
+if (RUN_12_EVALUATION) {
+  fn_run_script("ML/12_Evaluation.R",
+                "Exclusion diagnostics, sector concentration, TE, turnover")
+}
+
+#==============================================================================#
+# 13 — Robustness
+#==============================================================================#
+
+if (RUN_13_ROBUSTNESS) {
+  fn_run_script("ML/13_Robustness.R",
+                "Parts A-E: grid sensitivity, recovery classifier, S4, tiered, C1/C3")
+}
+
+#==============================================================================#
+# 14 — Comparison vs Naive Benchmarks
+#==============================================================================#
+
+if (RUN_14_COMPARISON) {
+  fn_run_script("ML/14_Comparison.R",
+                "C1-structural vs low-vol 200 vs quality 200 (Altman Z)")
+}
+
+#==============================================================================#
+# Pipeline Summary
+#==============================================================================#
+
+cat("\n[00_Master] ════════════════════════════════════════════════════\n")
+cat("  PIPELINE STATUS\n")
+cat("  ════════════════════════════════════════════════════════════\n\n")
+
+## Check which key output files exist
+.check <- function(path, label) {
+  status <- if (file.exists(path)) "✓" else "✗ MISSING"
+  cat(sprintf("  %s  %-30s  %s\n", status, label, basename(path)))
+}
+
+cat("  Data:\n")
+.check(PATH_UNIVERSE,          "Universe")
+.check(PATH_PRICES_MONTHLY,    "Prices monthly")
+.check(PATH_FUNDAMENTALS,      "Fundamentals")
+.check(PATH_MACRO_MONTHLY,     "Macro monthly")
+
+cat("\n  Labels:\n")
+.check(PATH_LABELS_BASE,       "CSI base labels")
+.check(PATH_LABELS_BUCKET,     "Bucket labels (5yr)")
+.check(PATH_LABELS_STRUCTURAL, "Structural labels (combined)")
+
+cat("\n  Features:\n")
+.check(PATH_FEATURES_FUND,     "features_fund.rds (M1/B1 input)")
+.check(PATH_FEATURES_RAW,      "features_raw.rds  (M3 input)")
+
+cat("\n  Model predictions:\n")
+.check(file.path(DIR_TABLES_M1,        "ag_preds_test.parquet"), "M1 test preds")
+.check(file.path(DIR_TABLES_M3,        "ag_preds_test.parquet"), "M3 test preds")
+.check(file.path(DIR_TABLES_B1_BUCKET, "ag_preds_test.parquet"), "B1-bucket test preds")
+.check(file.path(DIR_TABLES_B1_STRUCT, "ag_preds_test.parquet"), "B1-structural test preds")
+
+cat("\n  Index outputs:\n")
+.check(PATH_INDEX_RETURNS,     "Index returns")
+.check(PATH_ROBUST_CONC_P,     "Concentrated portfolio perf")
+.check(PATH_COMPARISON_PERF,   "Comparison performance")
+
+cat("\n")
+rm(.check)
+
+cat(sprintf("[00_Master] DONE: %s\n", format(Sys.time())))

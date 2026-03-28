@@ -1,0 +1,44 @@
+{
+  "model": "bucket_raw",
+  "description": "B3 \u2014 5yr bucket, full engineered features",
+  "preset": "good_quality",
+  "time_limit_s": 1800,
+  "label_col": "y_loser",
+  "is_bucket": true,
+  "label_shift": "none \u2014 labels forward-aligned in 05B/05C",
+  "eval_period": "2016\u20132019",
+  "oos_period": "2020\u20132024",
+  "oos_role": "index construction only \u2014 no OOS labels for bucket",
+  "boundary_exclusion": "N/A",
+  "cv_method": "per-fold averaging (not pooled)",
+  "n_features": 471,
+  "year_cat": true,
+  "cv_ap": 0.5867,
+  "cv_auc": 0.7298,
+  "cv_r3": 0.1626,
+  "cv_n_folds": 3,
+  "cv_per_fold_ap": [
+    0.6091,
+    0.5824,
+    0.5686
+  ],
+  "cv_per_fold_auc": [
+    0.6377,
+    0.7798,
+    0.7719
+  ],
+  "test": {
+    "set": "test_2016_2019",
+    "n_obs": 9631,
+    "n_pos": 3037,
+    "prevalence": 0.3153,
+    "auc_roc": 0.746,
+    "avg_precision": 0.5779,
+    "recall_fpr1": 0.0899,
+    "recall_fpr3": 0.1798,
+    "recall_fpr5": 0.2427,
+    "recall_fpr10": 0.3652,
+    "brier": 0.1842
+  },
+  "oos": null
+}

@@ -1,0 +1,56 @@
+{
+  "model": "fund",
+  "description": "M1 \u2014 Fundamentals only (no price features)",
+  "preset": "good_quality",
+  "time_limit_s": 1800,
+  "label_col": "y_next",
+  "is_bucket": false,
+  "label_shift": "y(t) \u2192 y_next = y(t+1)",
+  "eval_period": "2016\u20132018",
+  "oos_period": "2020\u20132024",
+  "oos_role": "index construction; OOS metrics stored but not used for model selection",
+  "boundary_exclusion": "year 2015 (train) and year 2019 (test) excluded from metrics",
+  "cv_method": "per-fold averaging (not pooled)",
+  "n_features": 452,
+  "year_cat": false,
+  "cv_ap": 0.5864,
+  "cv_auc": 0.8928,
+  "cv_r3": 0.3848,
+  "cv_n_folds": 3,
+  "cv_per_fold_ap": [
+    0.5776,
+    0.5639,
+    0.6178
+  ],
+  "cv_per_fold_auc": [
+    0.9101,
+    0.8567,
+    0.9115
+  ],
+  "test": {
+    "set": "test_2016_2018",
+    "n_obs": 8248,
+    "n_pos": 1079,
+    "prevalence": 0.1308,
+    "auc_roc": 0.9354,
+    "avg_precision": 0.7094,
+    "recall_fpr1": 0.3327,
+    "recall_fpr3": 0.5301,
+    "recall_fpr5": 0.6534,
+    "recall_fpr10": 0.8044,
+    "brier": 0.0657
+  },
+  "oos": {
+    "set": "oos_2020_2024",
+    "n_obs": 10395,
+    "n_pos": 1181,
+    "prevalence": 0.1136,
+    "auc_roc": 0.9409,
+    "avg_precision": 0.7429,
+    "recall_fpr1": 0.4386,
+    "recall_fpr3": 0.63,
+    "recall_fpr5": 0.707,
+    "recall_fpr10": 0.812,
+    "brier": 0.0515
+  }
+}

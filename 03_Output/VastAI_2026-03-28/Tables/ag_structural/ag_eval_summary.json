@@ -1,0 +1,44 @@
+{
+  "model": "structural",
+  "description": "S1 \u2014 Structural (CSI + 5yr CAGR), fundamentals only",
+  "preset": "good_quality",
+  "time_limit_s": 1800,
+  "label_col": "y_structural",
+  "is_bucket": true,
+  "label_shift": "none \u2014 labels forward-aligned in 05B/05C",
+  "eval_period": "2016\u20132019",
+  "oos_period": "2020\u20132024",
+  "oos_role": "index construction only \u2014 no OOS labels for bucket",
+  "boundary_exclusion": "N/A",
+  "cv_method": "per-fold averaging (not pooled)",
+  "n_features": 452,
+  "year_cat": true,
+  "cv_ap": 0.5728,
+  "cv_auc": 0.7155,
+  "cv_r3": 0.1515,
+  "cv_n_folds": 3,
+  "cv_per_fold_ap": [
+    0.5933,
+    0.5682,
+    0.557
+  ],
+  "cv_per_fold_auc": [
+    0.6159,
+    0.7712,
+    0.7594
+  ],
+  "test": {
+    "set": "test_2016_2019",
+    "n_obs": 9631,
+    "n_pos": 3037,
+    "prevalence": 0.3153,
+    "auc_roc": 0.7476,
+    "avg_precision": 0.5848,
+    "recall_fpr1": 0.0935,
+    "recall_fpr3": 0.188,
+    "recall_fpr5": 0.2502,
+    "recall_fpr10": 0.3767,
+    "brier": 0.1863
+  },
+  "oos": null
+}

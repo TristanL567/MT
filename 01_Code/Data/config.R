@@ -139,7 +139,7 @@ DIR_PANEL    <- file.path(DIR_DATA, "Panel")
 #==============================================================================#
 
 DIR_FIGURES <- file.path(DIR_OUTPUT, "Figures")
-DIR_TABLES  <- file.path(DIR_OUTPUT, "Tables")
+DIR_TABLES  <- file.path(DIR_OUTPUT, "VastAI_2026-03-28", "Tables")
 DIR_MODELS  <- file.path(DIR_OUTPUT, "Models")
 
 ## ── AutoGluon prediction + leaderboard output — one directory per model ─────

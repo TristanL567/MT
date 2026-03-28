@@ -150,7 +150,7 @@ MODEL = "M1"   # <- CHANGE THIS
 # ==============================================================================
 
 SEED          = 123
-TIME_LIMIT    = 3600    # seconds, Stage 1 full training
+TIME_LIMIT    = 1800    # seconds, Stage 1 full training
 PRESET        = "good_quality"
 CV_TIME_LIMIT = 900     # seconds per CV fold
 CV_PRESET     = "medium_quality"

@@ -110,8 +110,8 @@ MODELS <- list(
   ## Track 3: Structural
   list(key="structural",             short="S1", label="S1 — Fund",        track="Structural", col="#6A1B9A"),
   list(key="structural_latent_fund", short="S2", label="S2 — VAE Fund",    track="Structural", col="#9C27B0"),
-  list(key="structural_latent_raw",  short="S3", label="S3 — Raw",         track="Structural", col="#4A148C"),
-  list(key="structural_raw",         short="S4", label="S4 — VAE Raw",     track="Structural", col="#CE93D8")
+  list(key="structural_raw",         short="S3", label="S3 — Raw",         track="Structural", col="#4A148C"),
+  list(key="structural_latent_raw",  short="S4", label="S4 — VAE Raw",     track="Structural", col="#CE93D8")
 )
 
 MODEL_KEYS   <- sapply(MODELS, `[[`, "key")

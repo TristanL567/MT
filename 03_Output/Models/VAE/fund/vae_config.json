@@ -24,7 +24,12 @@
   "val_fraction": 0.15,
   "seed": 123,
   "vae_input": "fund",
-  "description": "M2 \u2014 VAE on fundamentals only (no price features)",
+  "description": "VAE on fundamentals only \u2014 output used by M2, B2, S2",
+  "downstream": [
+    "M2",
+    "B2",
+    "S2"
+  ],
   "n_features": 452,
   "n_cont": 451,
   "n_binary": 1,

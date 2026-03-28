@@ -24,7 +24,12 @@
   "val_fraction": 0.15,
   "seed": 123,
   "vae_input": "raw",
-  "description": "M4 \u2014 VAE on full feature set",
+  "description": "VAE on full features (fund + price) \u2014 output used by M4, B4, S4",
+  "downstream": [
+    "M4",
+    "B4",
+    "S4"
+  ],
   "n_features": 471,
   "n_cont": 470,
   "n_binary": 1,

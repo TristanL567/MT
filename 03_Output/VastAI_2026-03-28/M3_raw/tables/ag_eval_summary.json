@@ -1,0 +1,56 @@
+{
+  "model": "raw",
+  "description": "M3 \u2014 Full engineered features",
+  "preset": "good_quality",
+  "time_limit_s": 1800,
+  "label_col": "y_next",
+  "is_bucket": false,
+  "label_shift": "y(t) \u2192 y_next = y(t+1)",
+  "eval_period": "2016\u20132018",
+  "oos_period": "2020\u20132024",
+  "oos_role": "index construction; OOS metrics stored but not used for model selection",
+  "boundary_exclusion": "year 2015 (train) and year 2019 (test) excluded from metrics",
+  "cv_method": "per-fold averaging (not pooled)",
+  "n_features": 471,
+  "year_cat": false,
+  "cv_ap": 0.6597,
+  "cv_auc": 0.9217,
+  "cv_r3": 0.4846,
+  "cv_n_folds": 3,
+  "cv_per_fold_ap": [
+    0.6679,
+    0.6224,
+    0.6889
+  ],
+  "cv_per_fold_auc": [
+    0.9395,
+    0.8878,
+    0.9377
+  ],
+  "test": {
+    "set": "test_2016_2018",
+    "n_obs": 8248,
+    "n_pos": 1079,
+    "prevalence": 0.1308,
+    "auc_roc": 0.9588,
+    "avg_precision": 0.7939,
+    "recall_fpr1": 0.4634,
+    "recall_fpr3": 0.6719,
+    "recall_fpr5": 0.7702,
+    "recall_fpr10": 0.8804,
+    "brier": 0.0505
+  },
+  "oos": {
+    "set": "oos_2020_2024",
+    "n_obs": 10395,
+    "n_pos": 1181,
+    "prevalence": 0.1136,
+    "auc_roc": 0.9591,
+    "avg_precision": 0.8051,
+    "recall_fpr1": 0.5402,
+    "recall_fpr3": 0.7011,
+    "recall_fpr5": 0.768,
+    "recall_fpr10": 0.8747,
+    "brier": 0.0447
+  }
+}

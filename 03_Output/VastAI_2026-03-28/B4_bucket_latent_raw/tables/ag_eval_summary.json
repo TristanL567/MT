@@ -1,0 +1,44 @@
+{
+  "model": "bucket_latent_raw",
+  "description": "B4 \u2014 5yr bucket, VAE latent on full raw features",
+  "preset": "good_quality",
+  "time_limit_s": 1800,
+  "label_col": "y_loser",
+  "is_bucket": true,
+  "label_shift": "none \u2014 labels forward-aligned in 05B/05C",
+  "eval_period": "2016\u20132019",
+  "oos_period": "2020\u20132024",
+  "oos_role": "index construction only \u2014 no OOS labels for bucket",
+  "boundary_exclusion": "N/A",
+  "cv_method": "per-fold averaging (not pooled)",
+  "n_features": 25,
+  "year_cat": true,
+  "cv_ap": 0.5046,
+  "cv_auc": 0.6571,
+  "cv_r3": 0.1137,
+  "cv_n_folds": 3,
+  "cv_per_fold_ap": [
+    0.5668,
+    0.4367,
+    0.5103
+  ],
+  "cv_per_fold_auc": [
+    0.5687,
+    0.677,
+    0.7258
+  ],
+  "test": {
+    "set": "test_2016_2019",
+    "n_obs": 9631,
+    "n_pos": 3037,
+    "prevalence": 0.3153,
+    "auc_roc": 0.7004,
+    "avg_precision": 0.5373,
+    "recall_fpr1": 0.0626,
+    "recall_fpr3": 0.1663,
+    "recall_fpr5": 0.2308,
+    "recall_fpr10": 0.3428,
+    "brier": 0.1921
+  },
+  "oos": null
+}

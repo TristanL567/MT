@@ -1,22 +1,39 @@
 """
-08B_Autoencoder.py  (v3 — dual input mode)
-==========================================
-Beta-VAE with optional supervised classification loss for CSI prediction.
+08B_Autoencoder.py  (v4 — full model matrix)
+=============================================
+Beta-VAE with optional supervised classification loss.
 
-VAE INPUT SELECTION:
-    Set VAE_INPUT at the top of Section 3 (Configuration):
+RUN THIS SCRIPT EXACTLY TWICE:
+    python 08B_Autoencoder.py   (with VAE_INPUT = "fund")
+    python 08B_Autoencoder.py   (with VAE_INPUT = "raw")
 
-    VAE_INPUT = "fund"  → M2: VAE trained on fundamentals only
-                              Input : features_fund.rds
-                              Output: features_latent_fund.parquet
-                              Purpose: Does VAE add signal over raw fundamentals?
+The two runs produce:
+    features_latent_fund.parquet  →  used by M2, B2, S2  (in 09C)
+    features_latent_raw.parquet   →  used by M4, B4, S4  (in 09C)
 
-    VAE_INPUT = "raw"   → M4: VAE trained on full feature set
-                              Input : features_raw.rds
-                              Output: features_latent_raw.parquet
-                              Purpose: Does VAE compress full features usefully?
+The VAE knows nothing about label track (CSI / Bucket / Structural).
+The latent features are label-agnostic compressed representations.
+09C selects the correct latent file and label column per model.
 
-    Run twice — once per VAE_INPUT — to produce both latent files.
+FULL MODEL MATRIX (all 12 models run in 09C):
+┌────────┬─────────────────────────┬──────────────────────────────────────┐
+│ Model  │ Features                │ Label            │ 08B prereq        │
+├────────┼─────────────────────────┼──────────────────┼───────────────────┤
+│ M1     │ features_fund.rds       │ CSI (y)          │ —                 │
+│ M2     │ features_latent_fund    │ CSI (y)          │ VAE_INPUT="fund"  │
+│ M3     │ features_raw.rds        │ CSI (y)          │ —                 │
+│ M4     │ features_latent_raw     │ CSI (y)          │ VAE_INPUT="raw"   │
+│ B1     │ features_fund.rds       │ Bucket           │ —                 │
+│ B2     │ features_latent_fund    │ Bucket           │ VAE_INPUT="fund"  │
+│ B3     │ features_raw.rds        │ Bucket           │ —                 │
+│ B4     │ features_latent_raw     │ Bucket           │ VAE_INPUT="raw"   │
+│ S1     │ features_fund.rds       │ Structural       │ —                 │
+│ S2     │ features_latent_fund    │ Structural       │ VAE_INPUT="fund"  │
+│ S3     │ features_raw.rds        │ Structural       │ —                 │
+│ S4     │ features_latent_raw     │ Structural       │ VAE_INPUT="raw"   │
+└────────┴─────────────────────────┴──────────────────┴───────────────────┘
+
+08B only produces the latent files. Label selection happens in 09C.
 
 Architecture:
     Encoder     : n_features → 256 → 128 → 64 → (z_mean, z_log_var)
@@ -26,25 +43,21 @@ Architecture:
 Loss (corrected ELBO):
     total = recon_loss + beta * KL + gamma * BCE_clf
 
-    recon_loss = MSE.sum(dim=1).mean()     ← FIX 1: sum over features first
+    recon_loss = MSE.sum(dim=1).mean()     ← sum over features first
                + BCE.sum(dim=1).mean()
     KL         = -0.5 * mean(sum(1 + lv - mu^2 - exp(lv)))
-    BCE_clf    = BCEWithLogitsLoss         ← FIX 4: numerically stable
+    BCE_clf    = BCEWithLogitsLoss
 
-    Both recon_loss and KL now average over the batch dimension only,
-    making them comparable in scale. This is the correct ELBO formulation.
+    Both recon_loss and KL average over the batch dimension only.
+    This is the correct ELBO formulation.
 
 PIT normalisation:
-    output_distribution="normal"           ← FIX 2: matches linear decoder
+    output_distribution="normal"           matches linear decoder
     Fitted on TRAIN set only.
 
 Early stopping:
-    Validation split (15% of train)        ← FIX 3: generalisation check
+    Validation split (15% of train)
     Early stopping on VALIDATION loss.
-
-Outputs:
-    VAE_INPUT="fund" → features_latent_fund.parquet  [M2]
-    VAE_INPUT="raw"  → features_latent_raw.parquet   [M4]
 """
 
 # ==============================================================================
@@ -52,6 +65,7 @@ Outputs:
 # ==============================================================================
 
 import json
+import os
 import warnings
 from pathlib import Path
 
@@ -108,17 +122,25 @@ def get_valid_cols(df_tr, df_te, df_oo, cols):
 # 2. Paths
 # ==============================================================================
 
-if os.name == "nt":
+# Priority: MT_ROOT env var → Windows default → Vast.ai default
+_env_root = os.environ.get("MT_ROOT")
+if _env_root:
+    DATA_ROOT = Path(_env_root)
+elif os.name == "nt":
     DATA_ROOT = Path(r"C:\Users\Tristan Leiter\Documents\MT")
 else:
-    DATA_ROOT = Path("/workspace/MT")   # standard Vast.ai working directory
+    DATA_ROOT = Path("/workspace/MT")
+
+print(f"[08B] DATA_ROOT: {DATA_ROOT}")
+assert DATA_ROOT.exists(), f"DATA_ROOT not found: {DATA_ROOT}"
 
 DIR_DATA     = DATA_ROOT / "02_Data"
 DIR_FEATURES = DIR_DATA  / "Features"
 DIR_LABELS   = DIR_DATA  / "Labels"
 DIR_OUTPUT   = DATA_ROOT / "03_Output"
-DIR_MODELS   = DIR_OUTPUT / "Models" / "AutoGluon"
+DIR_MODELS   = DIR_OUTPUT / "Models" / "VAE"   # VAE weights live under Models/VAE/
 DIR_TABLES   = DIR_OUTPUT / "Tables"
+DIR_FIGURES  = DIR_OUTPUT / "Figures"
 
 DIR_FIGURES.mkdir(parents=True, exist_ok=True)
 DIR_MODELS.mkdir(parents=True,  exist_ok=True)
@@ -132,15 +154,18 @@ assert PATH_SPLIT_LABELS.exists(), (
 # ==============================================================================
 # 3. ── VAE INPUT SELECTION ────────────────────────────────────────────────────
 #
-#   VAE_INPUT = "fund"  → M2: VAE on fundamentals only (no price features)
-#                             features_fund.rds → features_latent_fund.parquet
+#   VAE_INPUT = "fund"  → trains VAE on fundamentals-only features
+#                         output used by M2, B2, S2 in 09C
 #
-#   VAE_INPUT = "raw"   → M4: VAE on full feature set
-#                             features_raw.rds  → features_latent_raw.parquet
+#   VAE_INPUT = "raw"   → trains VAE on full feature set (fund + price)
+#                         output used by M4, B4, S4 in 09C
+#
+#   Run this script TWICE — once per VAE_INPUT value.
+#   09C handles label selection (CSI / Bucket / Structural) separately.
 #
 # ==============================================================================
 
-VAE_INPUT = "M2"    # ← CHANGE THIS: "fund" | "raw"
+VAE_INPUT = "raw"    # ← CHANGE THIS: "fund" | "raw"
 
 VAE_INPUT_CONFIG = {
     "fund": {
@@ -148,19 +173,23 @@ VAE_INPUT_CONFIG = {
         "out"         : DIR_FEATURES / "features_latent_fund.parquet",
         "model_dir"   : DIR_MODELS / "fund",
         "fig_suffix"  : "fund",
-        "description" : "M2 — VAE on fundamentals only (no price features)",
+        "description" : "VAE on fundamentals only — output used by M2, B2, S2",
+        "downstream"  : ["M2", "B2", "S2"],
     },
     "raw": {
         "path"        : DIR_FEATURES / "features_raw.rds",
         "out"         : DIR_FEATURES / "features_latent_raw.parquet",
         "model_dir"   : DIR_MODELS / "raw",
         "fig_suffix"  : "raw",
-        "description" : "M4 — VAE on full feature set",
+        "description" : "VAE on full features (fund + price) — output used by M4, B4, S4",
+        "downstream"  : ["M4", "B4", "S4"],
     },
 }
 
-assert VAE_INPUT in VAE_INPUT_CONFIG, \
-    f"Unknown VAE_INPUT '{VAE_INPUT}'. Choose from: {list(VAE_INPUT_CONFIG.keys())}"
+assert VAE_INPUT in VAE_INPUT_CONFIG, (
+    f"Unknown VAE_INPUT '{VAE_INPUT}'. Choose from: "
+    f"{list(VAE_INPUT_CONFIG.keys())}"
+)
 
 vcfg = VAE_INPUT_CONFIG[VAE_INPUT]
 vcfg["model_dir"].mkdir(parents=True, exist_ok=True)
@@ -169,17 +198,19 @@ PATH_FEATURES_INPUT  = vcfg["path"]
 PATH_FEATURES_LATENT = vcfg["out"]
 DIR_MODELS_RUN       = vcfg["model_dir"]
 
-assert PATH_FEATURES_INPUT.exists(), \
-    f"Feature file not found: {PATH_FEATURES_INPUT}\n" \
+assert PATH_FEATURES_INPUT.exists(), (
+    f"Feature file not found: {PATH_FEATURES_INPUT}\n"
     f"Run 06B_Feature_Eng.R first."
+)
 
-print(f"[08B] ══════════════════════════════════════")
+print(f"\n[08B] ══════════════════════════════════════════════════")
 print(f"  VAE_INPUT    : {VAE_INPUT.upper()}")
 print(f"  Description  : {vcfg['description']}")
 print(f"  Input file   : {PATH_FEATURES_INPUT.name}")
 print(f"  Output file  : {PATH_FEATURES_LATENT.name}")
 print(f"  Model dir    : {DIR_MODELS_RUN}")
-print(f"[08B] ══════════════════════════════════════\n")
+print(f"  Downstream   : {', '.join(vcfg['downstream'])} (in 09C)")
+print(f"[08B] ══════════════════════════════════════════════════\n")
 
 # ==============================================================================
 # 4. Hyperparameters
@@ -194,7 +225,7 @@ CFG = {
 
     # Loss weights
     "beta"           : 1.0,
-    "gamma"          : 0.1,
+    "gamma"          : 0.1,    # > 0 → supervised (CSI label nudges latent space)
 
     # Training
     "epochs"         : 150,
@@ -224,14 +255,13 @@ np.random.seed(CFG["seed"])
 # ==============================================================================
 
 print(f"\n[08B] Loading {PATH_FEATURES_INPUT.name}...")
-result        = pyreadr.read_r(str(PATH_FEATURES_INPUT))
+result         = pyreadr.read_r(str(PATH_FEATURES_INPUT))
 features_input = result[None]
 print(f"  Shape: {features_input.shape[0]:,} rows × {features_input.shape[1]} cols")
 
 print("[08B] Loading split labels (OOT)...")
 split_labels = pd.read_parquet(PATH_SPLIT_LABELS)
-print(f"  Split distribution:\n"
-      f"{split_labels['split'].value_counts().to_string()}")
+print(f"  Split distribution:\n{split_labels['split'].value_counts().to_string()}")
 
 df        = features_input.merge(split_labels, on=["permno", "year"], how="left")
 n_before  = len(df)
@@ -244,6 +274,12 @@ print(f"  Rows after merge: {len(df):,}")
 # ==============================================================================
 # 7. Feature Preparation
 # ==============================================================================
+
+# NOTE: gamma > 0 means the VAE's classifier head uses the CSI label (y) to
+# weakly supervise the latent space. This is intentional — we want the latent
+# space to be at least somewhat CSI-predictive, which also benefits B2/S2
+# indirectly. The VAE does NOT see bucket or structural labels during training.
+# Label-specific signal is learned entirely in 09C (AutoGluon).
 
 ID_COLS = [
     "permno", "year", "y", "censored", "param_id",
@@ -319,8 +355,8 @@ assert not np.isnan(X_test_imp).any(),  "NAs remain after imputation — test"
 assert not np.isnan(X_oos_imp).any(),   "NAs remain after imputation — OOS"
 print("  Imputation complete — 0 NAs remaining")
 
-# PIT normalisation
-print("\n[08B] Applying PIT normalisation (normal distribution, train-fit only)...")
+# PIT normalisation (normal output matches linear decoder)
+print("\n[08B] Applying PIT normalisation (train-fit only)...")
 pit = QuantileTransformer(
     output_distribution="normal",
     n_quantiles=min(1000, len(X_train_imp)),
@@ -341,7 +377,7 @@ print(f"  PIT applied to {n_cont} continuous features")
 print(f"  Train mean (should be ≈ 0): {X_train_norm[:, :n_cont].mean():.4f}")
 print(f"  Train std  (should be ≈ 1): {X_train_norm[:, :n_cont].std():.4f}")
 
-# Validation split
+# Validation split (stratified on CSI label)
 y_strat = np.where(np.isnan(y_train_full), 0.0, y_train_full)
 
 train_idx, val_idx = train_test_split(
@@ -557,8 +593,6 @@ def train_vae(model, train_loader, val_loader, cfg, device):
     best_state    = None
     patience_ct   = 0
 
-    model.train()
-
     for epoch in range(cfg["epochs"]):
 
         beta_now     = get_beta(epoch, cfg["beta"], cfg["kl_warmup"])
@@ -649,6 +683,7 @@ def train_vae(model, train_loader, val_loader, cfg, device):
 
 @torch.no_grad()
 def encode(model, X_tensor, device, batch_size=1024):
+    """Encode using deterministic z_mu (not stochastic z_samp) for reproducibility."""
     model.eval()
     z_list   = []
     err_list = []
@@ -656,8 +691,7 @@ def encode(model, X_tensor, device, batch_size=1024):
     loader = DataLoader(TensorDataset(X_tensor), batch_size=batch_size)
     for (x_batch,) in loader:
         x_batch    = x_batch.to(device)
-        z_mu, z_lv = model.encoder(x_batch)
-        z_samp     = model.reparameterise(z_mu, z_lv)
+        z_mu, _    = model.encoder(x_batch)          # deterministic z_mu
         x_recon    = model.decoder(z_mu)
         err        = F.mse_loss(x_recon, x_batch, reduction="none").mean(dim=1)
         z_list.append(z_mu.cpu().numpy())
@@ -677,26 +711,18 @@ def plot_training_curves(history, save_path):
     axes[0].plot(history["val_total"],   label="Val total",   linewidth=1.5,
                  linestyle="--")
     axes[0].set_title("Total Loss (Train vs Val)")
-    axes[0].set_xlabel("Epoch")
-    axes[0].legend()
-    axes[0].grid(True, alpha=0.3)
+    axes[0].set_xlabel("Epoch"); axes[0].legend(); axes[0].grid(True, alpha=0.3)
 
     axes[1].plot(history["train_recon"], label="Train recon", linewidth=1.5)
     axes[1].plot(history["val_recon"],   label="Val recon",   linewidth=1.5,
                  linestyle="--")
     axes[1].set_title("Reconstruction Loss")
-    axes[1].set_xlabel("Epoch")
-    axes[1].legend()
-    axes[1].grid(True, alpha=0.3)
+    axes[1].set_xlabel("Epoch"); axes[1].legend(); axes[1].grid(True, alpha=0.3)
 
-    axes[2].plot(history["train_kl"],  label="KL",  linewidth=1.5,
-                 color="orange")
-    axes[2].plot(history["train_clf"], label="Clf", linewidth=1.5,
-                 color="red")
+    axes[2].plot(history["train_kl"],  label="KL",  linewidth=1.5, color="orange")
+    axes[2].plot(history["train_clf"], label="Clf", linewidth=1.5, color="red")
     axes[2].set_title("KL & Classification Loss")
-    axes[2].set_xlabel("Epoch")
-    axes[2].legend()
-    axes[2].grid(True, alpha=0.3)
+    axes[2].set_xlabel("Epoch"); axes[2].legend(); axes[2].grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
@@ -718,8 +744,7 @@ def plot_latent_space(z_means, y_labels, save_path, n_pairs=4):
         axes[i].scatter(z_v[y_v == 1, i], z_v[y_v == 1, j],
                         alpha=0.3, s=4, c="crimson",   label="CSI")
         axes[i].set_title(f"z{i+1} vs z{j+1}")
-        axes[i].set_xlabel(f"z{i+1}")
-        axes[i].set_ylabel(f"z{j+1}")
+        axes[i].set_xlabel(f"z{i+1}"); axes[i].set_ylabel(f"z{j+1}")
     axes[0].legend(markerscale=3, fontsize=8)
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
@@ -727,8 +752,7 @@ def plot_latent_space(z_means, y_labels, save_path, n_pairs=4):
     print(f"  Saved: {save_path.name}")
 
 
-def print_latent_diagnostics(z_train, y_train, z_test,
-                              err_train, err_test):
+def print_latent_diagnostics(z_train, y_train, z_test, err_train, err_test):
     dim_var     = z_train.var(axis=0)
     n_active    = int((dim_var >= 1e-3).sum())
     n_collapsed = int((dim_var < 1e-3).sum())
@@ -737,8 +761,7 @@ def print_latent_diagnostics(z_train, y_train, z_test,
     print(f"    z_dim              : {z_train.shape[1]}")
     print(f"    Active dims        : {n_active}  (var >= 1e-3)")
     print(f"    Collapsed dims     : {n_collapsed}  (var < 1e-3)")
-    print(f"    Dim variance range : [{dim_var.min():.4f}, "
-          f"{dim_var.max():.4f}]")
+    print(f"    Dim variance range : [{dim_var.min():.4f}, {dim_var.max():.4f}]")
     print(f"    Target (good run)  : <= 3 collapsed dims")
 
     valid      = ~np.isnan(y_train)
@@ -748,16 +771,15 @@ def print_latent_diagnostics(z_train, y_train, z_test,
 
     print(f"    Recon err CSI      : {csi_err:.4f}")
     print(f"    Recon err Non-CSI  : {noncsi_err:.4f}")
-    print(f"    Ratio (CSI/Non-CSI): {ratio:.3f}  "
-          f"(>1.0 = VAE learned anomaly signal)")
+    print(f"    Ratio (CSI/Non-CSI): {ratio:.3f}  (>1.0 = VAE learned anomaly signal)")
     print(f"    Test recon p95     : {np.percentile(err_test, 95):.4f}")
 
     if n_collapsed > 5:
         print(f"    ⚠ >5 collapsed dims — consider reducing beta "
               f"(current: {CFG['beta']})")
     if ratio < 1.0:
-        print(f"    ⚠ CSI recon ratio < 1.0 — VAE not learning anomaly "
-              f"signal. Check gamma and training convergence.")
+        print(f"    ⚠ CSI recon ratio < 1.0 — VAE not learning anomaly signal. "
+              f"Check gamma and training convergence.")
 
 
 # ==============================================================================
@@ -767,7 +789,7 @@ def print_latent_diagnostics(z_train, y_train, z_test,
 def main():
 
     print(f"\n{'='*60}")
-    print(f"[08B] Beta-VAE v3 — {vcfg['description']}")
+    print(f"[08B] Beta-VAE v4 — {vcfg['description']}")
     print(f"{'='*60}")
     print(f"  Input features : {n_features}")
     print(f"  Continuous     : {n_cont}")
@@ -775,9 +797,10 @@ def main():
     print(f"  z_dim          : {CFG['z_dim']}")
     print(f"  beta           : {CFG['beta']}")
     print(f"  gamma          : {CFG['gamma']}  "
-          f"({'supervised' if CFG['gamma'] > 0 else 'pure VAE'})")
+          f"({'supervised on CSI label' if CFG['gamma'] > 0 else 'pure VAE'})")
     print(f"  val_fraction   : {CFG['val_fraction']}")
     print(f"  Output         : {PATH_FEATURES_LATENT.name}")
+    print(f"  Used by        : {', '.join(vcfg['downstream'])}")
 
     # Build model
     model = BetaVAE(
@@ -803,38 +826,35 @@ def main():
     print(f"\n[08B] Training [{VAE_INPUT.upper()}]...")
     history = train_vae(model, train_loader, val_loader, CFG, DEVICE)
 
-    # Save model weights — separate dirs per VAE_INPUT
-    torch.save(model.state_dict(),
-               DIR_MODELS_RUN / "vae_weights.pt")
-    torch.save(model.encoder.state_dict(),
-               DIR_MODELS_RUN / "encoder_weights.pt")
+    # Save weights
+    torch.save(model.state_dict(),        DIR_MODELS_RUN / "vae_weights.pt")
+    torch.save(model.encoder.state_dict(), DIR_MODELS_RUN / "encoder_weights.pt")
 
     cfg_save = {
         **CFG,
-        "vae_input"  : VAE_INPUT,
-        "description": vcfg["description"],
-        "n_features" : n_features,
-        "n_cont"     : n_cont,
-        "n_binary"   : n_binary,
-        "col_order"  : col_order,
-        "binary_cols": bin_cols,
-        "pit_dist"   : "normal",
-        "output_file": str(PATH_FEATURES_LATENT),
+        "vae_input"   : VAE_INPUT,
+        "description" : vcfg["description"],
+        "downstream"  : vcfg["downstream"],
+        "n_features"  : n_features,
+        "n_cont"      : n_cont,
+        "n_binary"    : n_binary,
+        "col_order"   : col_order,
+        "binary_cols" : bin_cols,
+        "pit_dist"    : "normal",
+        "output_file" : str(PATH_FEATURES_LATENT),
     }
     with open(DIR_MODELS_RUN / "vae_config.json", "w") as f:
         json.dump(cfg_save, f, indent=2)
 
     print(f"\n[08B] Model saved to: {DIR_MODELS_RUN}")
 
-    # Encode all splits
-    print("\n[08B] Encoding train / test / OOS...")
+    # Encode all splits (deterministic z_mu)
+    print("\n[08B] Encoding train / test / OOS (deterministic z_mu)...")
     z_train, err_train = encode(model, X_train_t, DEVICE)
     z_test,  err_test  = encode(model, X_test_t,  DEVICE)
     z_oos,   err_oos   = encode(model, X_oos_t,   DEVICE)
 
-    # Diagnostics
-    print_latent_diagnostics(z_train, y_train_full,
-                             z_test, err_train, err_test)
+    print_latent_diagnostics(z_train, y_train_full, z_test, err_train, err_test)
 
     fig_suffix = vcfg["fig_suffix"]
     plot_training_curves(
@@ -850,8 +870,7 @@ def main():
     z_cols = [f"z{i+1}" for i in range(CFG["z_dim"])]
 
     def build_latent_df(src_df, z_arr, err_arr, split_name):
-        id_part = src_df[["permno", "year", "y", "censored"]].reset_index(
-            drop=True)
+        id_part = src_df[["permno", "year", "y", "censored"]].reset_index(drop=True)
         z_part  = pd.DataFrame(z_arr, columns=z_cols)
         err_col = pd.Series(err_arr, name="vae_recon_error")
         spl_col = pd.Series([split_name] * len(src_df), name="split")
@@ -861,21 +880,17 @@ def main():
     lat_test  = build_latent_df(test_df,  z_test,  err_test,  "test")
     lat_oos   = build_latent_df(oos_df,   z_oos,   err_oos,   "oos")
 
-    features_latent = pd.concat(
-        [lat_train, lat_test, lat_oos], ignore_index=True
-    )
+    features_latent = pd.concat([lat_train, lat_test, lat_oos], ignore_index=True)
 
     print(f"\n[08B] features_latent shape: {features_latent.shape}")
     print(f"  Columns: {list(features_latent.columns)}")
     print(f"  Output : {PATH_FEATURES_LATENT}")
 
-    # Save
     features_latent.to_parquet(PATH_FEATURES_LATENT, index=False)
     print(f"\n[08B] Saved: {PATH_FEATURES_LATENT}")
 
     # Assertions
     latent_cols = z_cols + ["vae_recon_error"]
-
     assert features_latent[latent_cols].isna().sum().sum() == 0, \
         "NAs in latent features — check encoding"
     assert features_latent[["permno", "year"]].isna().sum().sum() == 0, \
@@ -893,6 +908,7 @@ def main():
 
     print("\n[08B] All assertions passed.")
     print(f"[08B] DONE [{VAE_INPUT.upper()}] → {PATH_FEATURES_LATENT.name}")
+    print(f"      This file will be used by: {', '.join(vcfg['downstream'])}")
     print(f"{'='*60}\n")
 
 

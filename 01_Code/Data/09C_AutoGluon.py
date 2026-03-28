@@ -96,10 +96,25 @@ except ImportError:
 # 1. Paths
 # ==============================================================================
 
-if os.name == "nt":
-    DATA_ROOT = Path(r"C:\Users\Tristan Leiter\Documents\MT")
+import os # Ensure os is imported here if not already at the top
+
+# Check for a vast.ai specific environment variable to switch environments
+is_vast = "VAST_CONTAINERLABEL" in os.environ
+
+if is_vast:
+    print("[09C] Environment: vast.ai detected.")
+    DATA_ROOT = Path("/workspace/MT")
 else:
-    DATA_ROOT = Path("/workspace/MT")   # standard Vast.ai working directory
+    print("[09C] Environment: Local (default).")
+    # Default local paths based on OS
+    if os.name == "nt":
+        DATA_ROOT = Path(r"C:\Users\Tristan Leiter\Documents\MT")
+    else:
+        # Update this if you ever run locally on Mac/Linux
+        DATA_ROOT = Path("./MT")
+
+print(f"[09C] DATA_ROOT: {DATA_ROOT}")
+assert DATA_ROOT.exists(), f"DATA_ROOT not found: {DATA_ROOT}"
 
 DIR_DATA     = DATA_ROOT / "02_Data"
 DIR_FEATURES = DIR_DATA  / "Features"

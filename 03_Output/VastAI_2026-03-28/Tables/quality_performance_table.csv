@@ -1,0 +1,49 @@
+"period","label","model_key","excl_rate","weighting","cagr","vol","sharpe","max_dd","calmar","es_975","es_99"
+"insample","Benchmark MW (Full Universe)","bench","none","mw",0.1392,0.1644,0.6994,-0.4503,0.3092,-0.1145,-0.1387
+"insample","Benchmark EW (Full Universe)","bench","none","ew",0.1164,0.2069,0.4951,-0.5225,0.2227,-0.148,-0.178
+"insample","USMV Proxy MW (Bottom Quintile Vol)","usmv_proxy","none","mw",0.0989,0.1258,0.5804,-0.4225,0.234,-0.1021,-0.1165
+"insample","USMV Proxy EW (Bottom Quintile Vol)","usmv_proxy","none","ew",0.1067,0.1293,0.6241,-0.4711,0.2265,-0.1094,-0.1318
+"insample","QUAL Proxy MW (Top Quintile Quality)","qual_proxy","none","mw",0.1461,0.1642,0.7366,-0.3788,0.3857,-0.1076,-0.1365
+"insample","QUAL Proxy EW (Top Quintile Quality)","qual_proxy","none","ew",0.1259,0.1895,0.5678,-0.4601,0.2736,-0.1373,-0.1691
+"insample","C1 MW | Best CSI (M3-Raw, Opt)","c1_csi","opt","mw",0.1362,0.173,0.6573,-0.4114,0.3311,-0.1254,-0.165
+"insample","C3 EW | Best CSI (M3-Raw, Opt)","c1_csi","opt","ew",0.1298,0.1887,0.5877,-0.4509,0.2878,-0.1371,-0.1641
+"insample","C1 MW | Best Bucket (B1-Fund, Opt)","c1_bucket","opt","mw",0.1355,0.1663,0.6727,-0.4114,0.3293,-0.1183,-0.1508
+"insample","C3 EW | Best Bucket (B1-Fund, Opt)","c1_bucket","opt","ew",0.1247,0.1886,0.5636,-0.4857,0.2566,-0.136,-0.1648
+"insample","C1 MW | Best Combined (B1 u S-Raw, Opt)","c1_comb","opt","mw",0.1336,0.1656,0.6648,-0.4114,0.3248,-0.1183,-0.1508
+"insample","C3 EW | Best Combined (B1 u S-Raw, Opt)","c1_comb","opt","ew",0.1221,0.1873,0.5539,-0.4877,0.2503,-0.136,-0.1648
+"test","Benchmark MW (Full Universe)","bench","none","mw",0.1751,0.1208,1.1589,-0.1328,1.318,-0.0804,-0.0895
+"test","Benchmark EW (Full Universe)","bench","none","ew",0.1175,0.1571,0.5999,-0.2017,0.5828,-0.1065,-0.1082
+"test","USMV Proxy MW (Bottom Quintile Vol)","usmv_proxy","none","mw",0.1525,0.104,1.1397,-0.0978,1.5592,-0.0696,-0.0837
+"test","USMV Proxy EW (Bottom Quintile Vol)","usmv_proxy","none","ew",0.1492,0.1126,1.0345,-0.1218,1.2255,-0.0751,-0.0861
+"test","QUAL Proxy MW (Top Quintile Quality)","qual_proxy","none","mw",0.2225,0.1152,1.5576,-0.0968,2.298,-0.0687,-0.0811
+"test","QUAL Proxy EW (Top Quintile Quality)","qual_proxy","none","ew",0.1632,0.1403,0.9424,-0.1663,0.9814,-0.0879,-0.0939
+"test","C1 MW | Best CSI (M3-Raw, Opt)","c1_csi","opt","mw",0.2295,0.1147,1.6151,-0.0739,3.1044,-0.0641,-0.0698
+"test","C3 EW | Best CSI (M3-Raw, Opt)","c1_csi","opt","ew",0.1848,0.1381,1.0898,-0.155,1.1921,-0.0832,-0.0853
+"test","C1 MW | Best Bucket (B1-Fund, Opt)","c1_bucket","opt","mw",0.2317,0.1142,1.6377,-0.0748,3.097,-0.0636,-0.0694
+"test","C3 EW | Best Bucket (B1-Fund, Opt)","c1_bucket","opt","ew",0.1845,0.1378,1.0899,-0.152,1.2137,-0.0832,-0.0898
+"test","C1 MW | Best Combined (B1 u S-Raw, Opt)","c1_comb","opt","mw",0.231,0.1141,1.6334,-0.0748,3.088,-0.0636,-0.0694
+"test","C3 EW | Best Combined (B1 u S-Raw, Opt)","c1_comb","opt","ew",0.183,0.1378,1.0807,-0.1519,1.2048,-0.0838,-0.0908
+"oos","Benchmark MW (Full Universe)","bench","none","mw",0.2098,0.1947,0.929,-0.2148,0.9768,-0.1074,-0.1274
+"oos","Benchmark EW (Full Universe)","bench","none","ew",0.109,0.2452,0.423,-0.2677,0.4071,-0.1474,-0.2025
+"oos","USMV Proxy MW (Bottom Quintile Vol)","usmv_proxy","none","mw",0.1464,0.1655,0.733,-0.2038,0.7186,-0.0936,-0.104
+"oos","USMV Proxy EW (Bottom Quintile Vol)","usmv_proxy","none","ew",0.0817,0.1889,0.3544,-0.2408,0.3393,-0.1289,-0.1709
+"oos","QUAL Proxy MW (Top Quintile Quality)","qual_proxy","none","mw",0.1927,0.2002,0.8366,-0.2593,0.7431,-0.0966,-0.0975
+"oos","QUAL Proxy EW (Top Quintile Quality)","qual_proxy","none","ew",0.1193,0.2138,0.496,-0.2315,0.5155,-0.1235,-0.1592
+"oos","C1 MW | Best CSI (M3-Raw, Opt)","c1_csi","opt","mw",0.2242,0.2308,0.8678,-0.2918,0.7682,-0.107,-0.115
+"oos","C3 EW | Best CSI (M3-Raw, Opt)","c1_csi","opt","ew",0.1214,0.2129,0.5056,-0.2315,0.5245,-0.1129,-0.1338
+"oos","C1 MW | Best Bucket (B1-Fund, Opt)","c1_bucket","opt","mw",0.2157,0.2194,0.8692,-0.268,0.8048,-0.1014,-0.1016
+"oos","C3 EW | Best Bucket (B1-Fund, Opt)","c1_bucket","opt","ew",0.1243,0.2073,0.5264,-0.2209,0.5628,-0.1127,-0.1399
+"oos","C1 MW | Best Combined (B1 u S-Raw, Opt)","c1_comb","opt","mw",0.1865,0.2213,0.7518,-0.2653,0.7028,-0.1014,-0.1019
+"oos","C3 EW | Best Combined (B1 u S-Raw, Opt)","c1_comb","opt","ew",0.1201,0.2058,0.5104,-0.2134,0.5628,-0.1137,-0.1416
+"full","Benchmark MW (Full Universe)","bench","none","mw",0.1574,0.1646,0.7958,-0.4503,0.3496,-0.1102,-0.1359
+"full","Benchmark EW (Full Universe)","bench","none","ew",0.1152,0.2075,0.4889,-0.5225,0.2204,-0.1457,-0.1841
+"full","USMV Proxy MW (Bottom Quintile Vol)","usmv_proxy","none","mw",0.1155,0.131,0.6778,-0.4225,0.2733,-0.0982,-0.1133
+"full","USMV Proxy EW (Bottom Quintile Vol)","usmv_proxy","none","ew",0.1082,0.1397,0.5973,-0.4711,0.2297,-0.1124,-0.1416
+"full","QUAL Proxy MW (Top Quintile Quality)","qual_proxy","none","mw",0.1658,0.1651,0.838,-0.3788,0.4377,-0.1035,-0.1268
+"full","QUAL Proxy EW (Top Quintile Quality)","qual_proxy","none","ew",0.1301,0.1874,0.5922,-0.4601,0.2828,-0.1294,-0.1666
+"full","C1 MW | Best CSI (M3-Raw, Opt)","c1_csi","opt","mw",0.1658,0.178,0.7892,-0.4114,0.4029,-0.1198,-0.1525
+"full","C3 EW | Best CSI (M3-Raw, Opt)","c1_csi","opt","ew",0.1362,0.1864,0.6232,-0.4509,0.3022,-0.1265,-0.1565
+"full","C1 MW | Best Bucket (B1-Fund, Opt)","c1_bucket","opt","mw",0.1641,0.1709,0.8059,-0.4114,0.3988,-0.1127,-0.1385
+"full","C3 EW | Best Bucket (B1-Fund, Opt)","c1_bucket","opt","ew",0.1333,0.1852,0.6121,-0.4857,0.2745,-0.1263,-0.1586
+"full","C1 MW | Best Combined (B1 u S-Raw, Opt)","c1_comb","opt","mw",0.1574,0.1708,0.7724,-0.4114,0.3826,-0.1126,-0.1386
+"full","C3 EW | Best Combined (B1 u S-Raw, Opt)","c1_comb","opt","ew",0.1306,0.184,0.6017,-0.4877,0.2678,-0.1265,-0.159

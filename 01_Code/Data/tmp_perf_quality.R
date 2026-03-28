@@ -88,6 +88,7 @@ for (per in PERIODS_ORDER) {
     cat(sprintf("  %s\n", "DELTA vs. QUAL Proxy MW:"))
     for (delta_mk in c("c1_csi", "c1_bucket", "c1_comb")) {
       dm <- pull(delta_mk, "opt", "mw", per)
+      if (nrow(dm) > 1L) dm <- dm[1L]
       if (nrow(dm) == 0 || nrow(q_mw) == 0) next
       dlbl <- switch(delta_mk,
                      c1_csi    = "  Δ C1-CSI    vs QUAL Proxy MW",
@@ -110,6 +111,7 @@ for (per in PERIODS_ORDER) {
     cat(sprintf("  %s\n", "DELTA vs. USMV Proxy MW (risk focus):"))
     for (delta_mk in c("c1_csi", "c1_bucket", "c1_comb")) {
       dm <- pull(delta_mk, "opt", "mw", per)
+      if (nrow(dm) > 1L) dm <- dm[1L]
       if (nrow(dm) == 0) next
       dlbl <- switch(delta_mk,
                      c1_csi    = "  Δ C1-CSI    vs USMV Proxy MW",

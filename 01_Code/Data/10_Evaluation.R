@@ -543,7 +543,7 @@ for (key in names(PREDS)) {
          x="Mean Predicted Probability", y="Observed Event Rate") +
     theme_minimal(base_size=12)
   
-  ggsave_std(file.path(FIGS$models[[key]],
+  ggsave_std(file.path(FIGS$models[[tolower(MODEL_SHORTS[[key]])]],
                        paste0(MODEL_SHORTS[[key]], "_calibration.png")),
              p_i, w=PLOT_WIDTH*0.75, h=PLOT_HEIGHT*0.75)
 }
@@ -723,7 +723,7 @@ for (key in names(PREDS)) {
   shap_dt <- as.data.table(arrow::read_parquet(shap_path))
   meta_dt <- as.data.table(arrow::read_parquet(meta_path))
   imp_dt  <- as.data.table(arrow::read_parquet(imp_path))
-  fig_dir <- FIGS$models[[key]]
+  fig_dir <- FIGS$models[[tolower(MODEL_SHORTS[[key]])]]
   short   <- MODEL_SHORTS[[key]]
   cat(sprintf("  [%s] Plotting SHAP...\n", short))
   
@@ -818,7 +818,7 @@ for (key in names(PREDS)) {
   }
   
   pdp_dt  <- as.data.table(arrow::read_parquet(pdp_path))
-  fig_dir <- FIGS$models[[key]]
+  fig_dir <- FIGS$models[[tolower(MODEL_SHORTS[[key]])]]
   short   <- MODEL_SHORTS[[key]]
   cat(sprintf("  [%s] Plotting PDPs...\n", short))
   
